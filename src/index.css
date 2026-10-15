@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif: 'Cormorant Garamond', Georgia, serif;
+  --font-script: 'Great Vibes', cursive;
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  
+  --color-brand-green: #183728;
+  --color-brand-green-light: #264e3b;
+  --color-brand-green-dark: #0f241a;
+  --color-brand-gold: #C4A45B;
+  --color-brand-gold-light: #E8D9B0;
+  --color-brand-gold-dark: #9E7F36;
+  --color-brand-cream: #FAF7F0;
+  --color-brand-sand: #F2ECE0;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    overflow-x: hidden;
+    max-width: 100%;
+    width: 100%;
+  }
+  body {
+    font-family: var(--font-sans);
+    background-color: #FAF7F0;
+    overflow-x: hidden;
+    max-width: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+}
