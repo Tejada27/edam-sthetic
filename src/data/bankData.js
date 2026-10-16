@@ -1,7 +1,7 @@
 export const clinicInfo = {
   name: 'EDAM Sthetic',
   tagline: 'Belleza • Confianza • Autenticidad',
-  slogan: 'Tu piel en las mejores manos ♡',
+  slogan: 'Belleza • Confianza • Autenticidad',
   specialistName: 'Katherine Encarnación',
   specialistTitle: 'Cosmiatra Especialista',
   currency: 'RD$',

@@ -43,10 +43,6 @@ export default function Footer({ onOpenBooking }) {
               </div>
             </div>
 
-            <p className="font-['Great_Vibes'] text-2xl text-[#E8D9B0] pt-1">
-              "Tu piel en las mejores manos ♡"
-            </p>
-
             <p className="text-xs text-[#FAF7F0]/80 leading-relaxed font-light">
               Centro especializado en cosmiatría, salud dérmica y bienestar integral junto a tu cosmiatra Katherine Encarnación.
             </p>

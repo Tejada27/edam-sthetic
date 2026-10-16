@@ -92,7 +92,9 @@ export default function LocationSection({ onOpenBooking }) {
                   <h3 className="text-2xl font-serif font-bold text-[#FAF7F0] tracking-widest">
                     EDAM <span className="text-[#C4A45B] text-lg font-normal">Sthetic</span>
                   </h3>
-                  <p className="font-['Great_Vibes'] text-2xl text-[#E8D9B0] mt-1">"Tu piel en las mejores manos ♡"</p>
+                  <p className="text-[10px] tracking-[0.25em] uppercase text-[#E8D9B0] font-semibold mt-1">
+                    Belleza • Confianza • Autenticidad
+                  </p>
                 </div>
 
                 <div className="pt-2 border-t border-white/20 text-xs text-[#FAF7F0]/90 space-y-2 text-left">

@@ -44,11 +44,6 @@ export default function Hero({ onOpenBooking }) {
                 </p>
               </div>
             </div>
-
-            {/* Handwritten script slogan */}
-            <p className="font-['Great_Vibes'] text-3xl sm:text-4xl text-[#183728] tracking-wide mt-3 text-center">
-              "Tu piel en las mejores manos ♡"
-            </p>
           </div>
         </div>
 

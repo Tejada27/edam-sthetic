@@ -41,8 +41,8 @@ export default function RecommendationsGuide() {
           <h2 className="text-3xl sm:text-4xl font-serif text-[#183728] font-bold">
             Recomendaciones Antes de los Procesos
           </h2>
-          <p className="font-['Great_Vibes'] text-3xl text-[#9E7F36] mt-1">
-            Tu piel en las mejores manos
+          <p className="text-xs uppercase tracking-[0.25em] text-[#9E7F36] font-bold mt-2">
+            Belleza • Confianza • Autenticidad
           </p>
           <p className="text-stone-600 text-xs sm:text-sm mt-2 font-light leading-relaxed">
             Para garantizar que tu experiencia en EDAM Sthetic sea segura y obtengas resultados luminosos y duraderos, 
