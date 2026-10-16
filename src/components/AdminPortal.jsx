@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   DollarSign, Package, TrendingUp, AlertTriangle, 
   Plus, ShoppingBag, ArrowLeft, Trash2, 
-  Search, Eye, EyeOff, LogOut, Sparkles, Shield, Clock
+  Search, Eye, EyeOff, LogOut, Sparkles, Shield, Clock, RefreshCw
 } from 'lucide-react';
 import { 
   supabase, 
@@ -104,25 +104,80 @@ export default function AdminPortal({
     localStorage.setItem('edam_services_data', JSON.stringify(completedServices));
   }, [completedServices]);
 
-  // Load from Supabase in parallel for high performance
-  useEffect(() => {
-    if (isSupabaseConfigured && supabase) {
-      const fetchData = async () => {
-        try {
-          const [pRes, sRes, cRes] = await Promise.all([
-            supabase.from('productos').select('*').order('created_at', { ascending: true }),
-            supabase.from('ventas_productos').select('*').order('fecha', { ascending: false }),
-            supabase.from('servicios_realizados').select('*').order('fecha', { ascending: false })
-          ]);
-          if (pRes.data && pRes.data.length > 0) setProducts(pRes.data);
-          if (sRes.data) setSales(sRes.data);
-          if (cRes.data) setCompletedServices(cRes.data);
-        } catch (err) {
-          console.error('Error al sincronizar con Supabase, usando caché local', err);
-        }
-      };
-      fetchData();
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Synchronize data from Supabase (Single source of truth)
+  const fetchData = async () => {
+    if (!isSupabaseConfigured || !supabase) return;
+    try {
+      setIsSyncing(true);
+      const [pRes, sRes, cRes] = await Promise.all([
+        supabase.from('productos').select('*').order('created_at', { ascending: true }),
+        supabase.from('ventas_productos').select('*').order('fecha', { ascending: false }),
+        supabase.from('servicios_realizados').select('*').order('fecha', { ascending: false })
+      ]);
+
+      if (pRes.data) {
+        setProducts(pRes.data);
+        localStorage.setItem('edam_products_data', JSON.stringify(pRes.data));
+      }
+      if (sRes.data) {
+        setSales(sRes.data);
+        localStorage.setItem('edam_sales_data', JSON.stringify(sRes.data));
+      }
+      if (cRes.data) {
+        setCompletedServices(cRes.data);
+        localStorage.setItem('edam_services_data', JSON.stringify(cRes.data));
+      }
+    } catch (err) {
+      console.error('Error al sincronizar con Supabase, usando caché local', err);
+    } finally {
+      setIsSyncing(false);
     }
+  };
+
+  // 1. Initial load on mount
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  // 2. Auto-sync whenever the user switches back to this browser tab or focuses window
+  useEffect(() => {
+    const handleSyncOnFocus = () => {
+      if (document.visibilityState === 'visible') {
+        fetchData();
+      }
+    };
+
+    window.addEventListener('focus', handleSyncOnFocus);
+    document.addEventListener('visibilitychange', handleSyncOnFocus);
+
+    return () => {
+      window.removeEventListener('focus', handleSyncOnFocus);
+      document.removeEventListener('visibilitychange', handleSyncOnFocus);
+    };
+  }, []);
+
+  // 3. Supabase Realtime: Instant WebSocket push updates from other devices (e.g. phone to PC)
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+
+    const channel = supabase
+      .channel('edam-realtime-admin')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'productos' }, () => {
+        fetchData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas_productos' }, () => {
+        fetchData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'servicios_realizados' }, () => {
+        fetchData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // Brute-force lockout timer check (only runs when unauthenticated)
@@ -295,19 +350,23 @@ export default function AdminPortal({
   };
 
   // Adjust stock quickly (+1 or -1)
-  const handleAdjustStock = async (prodId, delta) => {
+  const handleAdjustStock = async (prod, delta) => {
     let updatedStock = 0;
     setProducts(prev => prev.map(p => {
-      if (p.id === prodId) {
+      if (p.id === prod.id) {
         updatedStock = Math.max(0, Number(p.stock_actual || 0) + delta);
         return { ...p, stock_actual: updatedStock };
       }
       return p;
     }));
 
-    if (isSupabaseConfigured && supabase && !prodId.startsWith('prod-')) {
+    if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.from('productos').update({ stock_actual: updatedStock }).eq('id', prodId);
+        if (prod.id && !prod.id.startsWith('prod-')) {
+          await supabase.from('productos').update({ stock_actual: updatedStock }).eq('id', prod.id);
+        } else {
+          await supabase.from('productos').update({ stock_actual: updatedStock }).eq('nombre', prod.nombre);
+        }
       } catch (err) {
         console.error('Error al actualizar stock en Supabase', err);
       }
@@ -315,12 +374,16 @@ export default function AdminPortal({
   };
 
   // Delete product
-  const handleDeleteProduct = async (prodId) => {
-    if (window.confirm('¿Deseas eliminar este producto del inventario?')) {
-      setProducts(prev => prev.filter(p => p.id !== prodId));
-      if (isSupabaseConfigured && supabase && !prodId.startsWith('prod-')) {
+  const handleDeleteProduct = async (prod) => {
+    if (window.confirm(`¿Deseas eliminar "${prod.nombre}" del inventario?`)) {
+      setProducts(prev => prev.filter(p => p.id !== prod.id));
+      if (isSupabaseConfigured && supabase) {
         try {
-          await supabase.from('productos').delete().eq('id', prodId);
+          if (prod.id && !prod.id.startsWith('prod-')) {
+            await supabase.from('productos').delete().eq('id', prod.id);
+          } else {
+            await supabase.from('productos').delete().eq('nombre', prod.nombre);
+          }
         } catch (err) {
           console.error('Error al eliminar producto en Supabase', err);
         }
@@ -635,6 +698,16 @@ export default function AdminPortal({
 
         {/* Database status and actions */}
         <div className="flex items-center gap-2.5">
+          <button
+            onClick={fetchData}
+            disabled={isSyncing}
+            title="Sincronizar cambios desde la nube"
+            className="px-2.5 py-1 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white transition-colors flex items-center gap-1.5 text-[11px]"
+          >
+            <RefreshCw className={`w-3 h-3 text-[#C4A45B] ${isSyncing ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">{isSyncing ? 'Sincronizando...' : 'Actualizar'}</span>
+          </button>
+
           <span 
             className={`text-[11px] font-medium px-2.5 py-1 rounded-full flex items-center gap-1.5 ${
               isSupabaseConfigured 
@@ -1055,7 +1128,7 @@ export default function AdminPortal({
                     <div className="pt-3 border-t border-stone-100 flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5">
                         <button
-                          onClick={() => handleAdjustStock(prod.id, -1)}
+                          onClick={() => handleAdjustStock(prod, -1)}
                           title="Restar 1 unidad"
                           className="w-7 h-7 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold flex items-center justify-center text-xs transition-colors"
                         >
@@ -1063,7 +1136,7 @@ export default function AdminPortal({
                         </button>
                         <span className="text-xs font-semibold px-2 text-stone-800">{prod.stock_actual}</span>
                         <button
-                          onClick={() => handleAdjustStock(prod.id, 1)}
+                          onClick={() => handleAdjustStock(prod, 1)}
                           title="Sumar 1 unidad"
                           className="w-7 h-7 rounded-lg bg-[#183728] text-white hover:bg-[#0f241a] font-bold flex items-center justify-center text-xs transition-colors"
                         >
@@ -1072,7 +1145,7 @@ export default function AdminPortal({
                       </div>
 
                       <button
-                        onClick={() => handleDeleteProduct(prod.id)}
+                        onClick={() => handleDeleteProduct(prod)}
                         className="text-stone-300 hover:text-red-600 p-1.5 transition-colors"
                         title="Eliminar producto"
                       >
