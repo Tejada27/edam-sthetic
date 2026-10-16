@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  Lock, DollarSign, Package, Calendar, TrendingUp, AlertTriangle, 
-  Plus, ShoppingBag, CheckCircle2, ArrowLeft, RefreshCw, Trash2, 
-  Search, Eye, EyeOff, Key, LogOut, Sparkles, Filter, CreditCard
+  DollarSign, Package, TrendingUp, AlertTriangle, 
+  Plus, ShoppingBag, ArrowLeft, Trash2, 
+  Search, Eye, EyeOff, LogOut, Sparkles, Shield, Clock
 } from 'lucide-react';
 import { 
   supabase, 
@@ -12,7 +12,6 @@ import {
   initialCompletedServices 
 } from '../lib/supabaseClient';
 import { servicesData } from '../data/servicesData';
-import { clinicInfo } from '../data/bankData';
 
 export default function AdminPortal({ 
   onClose, 
@@ -26,19 +25,11 @@ export default function AdminPortal({
   const [pinInput, setPinInput] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
-
-  // Password change modal states
-  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
-  const [passwordForm, setPasswordForm] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: ''
-  });
-  const [passwordSuccess, setPasswordSuccess] = useState('');
-  const [passwordError, setPasswordError] = useState('');
+  const [lockoutRemaining, setLockoutRemaining] = useState(0);
+  const [sessionExpiredNotice, setSessionExpiredNotice] = useState(false);
 
   // Active view tab inside admin
-  const [activeTab, setActiveTab] = useState('finanzas'); // 'finanzas' | 'inventario' | 'servicios' | 'agenda'
+  const [activeTab, setActiveTab] = useState('finanzas'); // 'finanzas' | 'inventario' | 'servicios'
 
   // Data states
   const [products, setProducts] = useState(() => {
@@ -92,7 +83,7 @@ export default function AdminPortal({
     notas: ''
   });
 
-  // Save to localStorage when states update (offline persistent store)
+  // Save to localStorage when states update (offline persistent cache)
   useEffect(() => {
     localStorage.setItem('edam_products_data', JSON.stringify(products));
   }, [products]);
@@ -119,58 +110,88 @@ export default function AdminPortal({
           const { data: cData } = await supabase.from('servicios_realizados').select('*');
           if (cData) setCompletedServices(cData);
         } catch (err) {
-          console.error('Error fetching from Supabase, using local cache', err);
+          console.error('Error al sincronizar con Supabase, usando caché local', err);
         }
       };
       fetchData();
     }
   }, []);
 
-  // Get current active password
-  const getActivePassword = () => {
-    return localStorage.getItem('edam_admin_password') || import.meta.env.VITE_ADMIN_PASSWORD || 'katherine2026';
-  };
+  // Brute-force lockout timer check
+  useEffect(() => {
+    const checkLockout = () => {
+      const lockoutUntil = parseInt(sessionStorage.getItem('edam_admin_lockout_until') || '0', 10);
+      const now = Date.now();
+      if (lockoutUntil > now) {
+        setLockoutRemaining(Math.ceil((lockoutUntil - now) / 1000));
+      } else {
+        setLockoutRemaining(0);
+      }
+    };
 
-  // Login handler
+    checkLockout();
+    const interval = setInterval(checkLockout, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auto-logout after 20 minutes of user inactivity for security
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let lastActivity = Date.now();
+    const INACTIVITY_TIMEOUT = 20 * 60 * 1000; // 20 minutes
+
+    const updateActivity = () => {
+      lastActivity = Date.now();
+    };
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach(event => window.addEventListener(event, updateActivity, { passive: true }));
+
+    const checkInactivity = setInterval(() => {
+      if (Date.now() - lastActivity > INACTIVITY_TIMEOUT) {
+        setIsAuthenticated(false);
+        sessionStorage.removeItem('edam_admin_auth');
+        setSessionExpiredNotice(true);
+      }
+    }, 10000);
+
+    return () => {
+      events.forEach(event => window.removeEventListener(event, updateActivity));
+      clearInterval(checkInactivity);
+    };
+  }, [isAuthenticated]);
+
+  // Login handler with brute-force throttling
   const handleLogin = (e) => {
     e.preventDefault();
-    const activePass = getActivePassword().trim();
-    if (pinInput.trim() === activePass || pinInput.trim() === 'katherine2026') {
+    if (lockoutRemaining > 0) return;
+
+    // Secure password read strictly from Vercel Environment Variable (fallback for dev)
+    const validPassword = (import.meta.env.VITE_ADMIN_PASSWORD || 'katherine2026').trim();
+
+    if (pinInput.trim() === validPassword) {
       setIsAuthenticated(true);
       sessionStorage.setItem('edam_admin_auth', 'true');
+      sessionStorage.removeItem('edam_admin_failed_attempts');
+      sessionStorage.removeItem('edam_admin_lockout_until');
       setLoginError('');
+      setSessionExpiredNotice(false);
       setPinInput('');
     } else {
-      setLoginError('Contraseña incorrecta. Por favor verifícala.');
-    }
-  };
+      const attempts = parseInt(sessionStorage.getItem('edam_admin_failed_attempts') || '0', 10) + 1;
+      sessionStorage.setItem('edam_admin_failed_attempts', attempts.toString());
 
-  // Change password handler
-  const handleChangePassword = (e) => {
-    e.preventDefault();
-    const activePass = getActivePassword().trim();
-
-    if (passwordForm.currentPassword.trim() !== activePass) {
-      setPasswordError('La contraseña actual ingresada no es correcta.');
-      return;
+      if (attempts >= 5) {
+        const lockoutTime = Date.now() + 3 * 60 * 1000; // 3 minutes lockout
+        sessionStorage.setItem('edam_admin_lockout_until', lockoutTime.toString());
+        setLockoutRemaining(180);
+        setLoginError('Demasiados intentos incorrectos. Acceso bloqueado temporalmente por 3 minutos por seguridad.');
+      } else {
+        const remainingAttempts = 5 - attempts;
+        setLoginError(`Contraseña incorrecta. Te quedan ${remainingAttempts} intento${remainingAttempts === 1 ? '' : 's'}.`);
+      }
     }
-    if (passwordForm.newPassword.length < 5) {
-      setPasswordError('La nueva contraseña debe tener al menos 5 caracteres.');
-      return;
-    }
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setPasswordError('La confirmación no coincide con la nueva contraseña.');
-      return;
-    }
-
-    localStorage.setItem('edam_admin_password', passwordForm.newPassword.trim());
-    setPasswordSuccess('¡Contraseña actualizada con éxito!');
-    setPasswordError('');
-    setTimeout(() => {
-      setIsChangePasswordOpen(false);
-      setPasswordSuccess('');
-      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-    }, 1200);
   };
 
   const handleLogout = () => {
@@ -265,7 +286,7 @@ export default function AdminPortal({
 
   // Delete product
   const handleDeleteProduct = async (prodId) => {
-    if (window.confirm('¿Segura que deseas eliminar este producto del inventario?')) {
+    if (window.confirm('¿Deseas eliminar este producto del inventario?')) {
       setProducts(prev => prev.filter(p => p.id !== prodId));
       if (isSupabaseConfigured && supabase) {
         await supabase.from('productos').delete().eq('id', prodId);
@@ -281,7 +302,7 @@ export default function AdminPortal({
 
     const qty = Number(newSaleForm.cantidad) || 1;
     if (prod.stock_actual < qty) {
-      alert(`Stock insuficiente. Solo quedan ${prod.stock_actual} unidades.`);
+      alert(`Stock insuficiente. Solo quedan ${prod.stock_actual} unidades disponibles.`);
       return;
     }
 
@@ -358,33 +379,42 @@ export default function AdminPortal({
     });
   };
 
-  // If NOT authenticated, show the login screen
+  // =========================================================================
+  // VIEW: AUTHENTICATION SCREEN
+  // =========================================================================
   if (!isAuthenticated) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in text-left">
-        <div className="bg-[#FAF7F0] rounded-3xl max-w-md w-full p-8 border-2 border-[#C4A45B] shadow-2xl space-y-6">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/80 backdrop-blur-md animate-fade-in text-left">
+        <div className="bg-white rounded-2xl max-w-sm w-full p-8 border border-stone-200 shadow-2xl space-y-6">
           
-          <div className="text-center space-y-3">
-            <div className="w-16 h-16 rounded-full overflow-hidden mx-auto border-2 border-[#C4A45B] bg-black shadow-lg">
+          <div className="text-center space-y-2.5">
+            <div className="w-14 h-14 rounded-full overflow-hidden mx-auto border border-[#C4A45B]/50 bg-black shadow-md">
               <img src="/logo_ea_black.png" alt="EA" className="w-full h-full object-cover" />
             </div>
             <div>
-              <span className="text-[10px] uppercase tracking-[0.25em] text-[#9E7F36] font-bold block">
-                EDAM Sthetic • Área Privada
+              <span className="text-[10px] uppercase tracking-[0.2em] text-[#9E7F36] font-semibold block">
+                Acceso Privado
               </span>
-              <h2 className="text-2xl font-serif font-bold text-[#183728]">
+              <h2 className="text-xl font-serif font-bold text-[#183728]">
                 Panel de Administración
               </h2>
-              <p className="text-xs text-stone-600 mt-1">
-                Acceso exclusivo para Katherine Encarnación
+              <p className="text-xs text-stone-500 mt-0.5">
+                EDAM Sthetic • Katherine Encarnación
               </p>
             </div>
           </div>
 
+          {sessionExpiredNotice && (
+            <div className="p-3 rounded-xl bg-stone-100 border border-stone-200 text-stone-600 text-xs flex items-center gap-2">
+              <Clock className="w-4 h-4 text-stone-500 shrink-0" />
+              <span>Tu sesión se cerró por inactividad. Ingresa nuevamente.</span>
+            </div>
+          )}
+
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[#183728] mb-1.5">
-                Contraseña de Acceso
+              <label className="block text-xs font-medium text-stone-700 mb-1.5">
+                Contraseña
               </label>
               <div className="relative">
                 <input
@@ -392,162 +422,170 @@ export default function AdminPortal({
                   value={pinInput}
                   onChange={(e) => setPinInput(e.target.value)}
                   placeholder="Introduce tu contraseña..."
-                  className="w-full px-4 py-3 rounded-xl border border-[#D4C4A3] bg-white text-sm focus:ring-2 focus:ring-[#183728] focus:outline-none pr-11"
+                  disabled={lockoutRemaining > 0}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 bg-stone-50/50 text-sm focus:ring-2 focus:ring-[#183728] focus:bg-white focus:outline-none pr-10 disabled:opacity-50"
                   autoFocus
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="text-stone-400 hover:text-stone-600 absolute right-3.5 top-3.5 p-0.5 transition-colors"
-                  title={showPassword ? "Ocultar contraseña" : "Ver contraseña"}
+                  className="text-stone-400 hover:text-stone-600 absolute right-3 top-3 p-0.5 transition-colors"
+                  tabIndex={-1}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
 
-            {loginError && (
-              <p className="text-xs text-red-600 font-semibold p-2.5 rounded-lg bg-red-50 border border-red-200">
+            {lockoutRemaining > 0 && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
+                <Shield className="w-4 h-4 text-amber-700 shrink-0" />
+                <span>Bloqueado por seguridad. Espera <strong>{lockoutRemaining}s</strong> para reintentar.</span>
+              </div>
+            )}
+
+            {loginError && lockoutRemaining === 0 && (
+              <p className="text-xs text-red-600 font-medium p-2.5 rounded-lg bg-red-50 border border-red-200">
                 {loginError}
               </p>
             )}
 
-            <div className="flex gap-3 pt-2">
+            <div className="flex gap-2.5 pt-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 py-3 rounded-xl border border-[#D4C4A3] bg-white text-stone-700 text-xs font-bold uppercase tracking-wider hover:bg-[#F2ECE0] transition-colors"
+                className="flex-1 py-2.5 rounded-xl border border-stone-300 bg-white text-stone-700 text-xs font-semibold hover:bg-stone-50 transition-colors"
               >
                 Volver
               </button>
               <button
                 type="submit"
-                className="flex-1 py-3 rounded-xl bg-[#183728] text-[#FAF7F0] border border-[#C4A45B] text-xs font-bold uppercase tracking-wider hover:bg-[#0f241a] transition-all shadow-md"
+                disabled={lockoutRemaining > 0}
+                className="flex-1 py-2.5 rounded-xl bg-[#183728] text-white text-xs font-semibold hover:bg-[#0f241a] transition-all shadow-sm disabled:opacity-50"
               >
                 Ingresar
               </button>
             </div>
           </form>
 
+          <div className="pt-2 border-t border-stone-100 text-center">
+            <span className="text-[11px] text-stone-400 flex items-center justify-center gap-1.5">
+              <Shield className="w-3.5 h-3.5 text-stone-400" />
+              Seguridad protegida mediante Vercel
+            </span>
+          </div>
+
         </div>
       </div>
     );
   }
 
-  // Once Authenticated: Full Management Portal
+  // =========================================================================
+  // VIEW: AUTHENTICATED MANAGEMENT PORTAL
+  // =========================================================================
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[#FAF7F0] text-stone-900 overflow-hidden text-left animate-fade-in">
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#FAF7F0] text-stone-900 overflow-hidden text-left animate-fade-in font-sans">
       
-      {/* Top Admin Header */}
-      <header className="bg-[#0A0F0D] text-[#FAF7F0] px-4 sm:px-8 py-3.5 border-b-2 border-[#C4A45B] flex flex-wrap items-center justify-between gap-3 shrink-0">
+      {/* Top Header */}
+      <header className="bg-[#0D1410] text-[#FAF7F0] px-4 sm:px-8 py-3.5 border-b border-stone-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-full overflow-hidden border border-[#C4A45B] bg-black shrink-0">
+          <div className="w-9 h-9 rounded-full overflow-hidden border border-[#C4A45B]/60 bg-black shrink-0">
             <img src="/logo_ea_black.png" alt="EA" className="w-full h-full object-cover" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-base font-serif font-bold text-[#FAF7F0] tracking-wider">
-                EDAM <span className="text-[#C4A45B] text-xs uppercase font-normal">Sthetic</span>
+              <span className="text-sm font-serif font-bold text-white tracking-wider">
+                EDAM <span className="text-[#C4A45B] text-xs font-normal">STHETIC</span>
               </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#183728] border border-[#C4A45B]/60 text-[#E8D9B0] font-semibold">
-                Gestión & Finanzas
+              <span className="text-[10px] px-2 py-0.5 rounded-md bg-stone-800 text-stone-300 font-medium">
+                Panel de Gestión
               </span>
             </div>
             <p className="text-[10px] text-stone-400">
-              Cosmiatra: <strong>Katherine Encarnación</strong> • Santo Domingo Este
+              Katherine Encarnación • Santo Domingo Este
             </p>
           </div>
         </div>
 
         {/* Database status and actions */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <span 
-            className={`text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 ${
+            className={`text-[11px] font-medium px-2.5 py-1 rounded-full flex items-center gap-1.5 ${
               isSupabaseConfigured 
-                ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/50' 
-                : 'bg-amber-950/80 text-amber-300 border border-amber-500/50'
+                ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-800/60' 
+                : 'bg-stone-800 text-stone-300 border border-stone-700'
             }`}
-            title={isSupabaseConfigured ? 'Conectado a PostgreSQL en Supabase' : 'Guardando en Almacenamiento Local Seguro'}
           >
-            <span className={`w-1.5 h-1.5 rounded-full ${isSupabaseConfigured ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
-            <span>{isSupabaseConfigured ? 'Supabase Activo' : 'Modo Local Seguro'}</span>
+            <span className={`w-1.5 h-1.5 rounded-full ${isSupabaseConfigured ? 'bg-emerald-400 animate-pulse' : 'bg-stone-400'}`}></span>
+            <span>{isSupabaseConfigured ? 'Conectado a Supabase' : 'Modo Local'}</span>
           </span>
-
-          <button
-            onClick={() => setIsChangePasswordOpen(true)}
-            title="Cambiar Contraseña de Acceso"
-            className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-[#FAF7F0] transition-colors flex items-center gap-1.5 text-xs font-semibold"
-          >
-            <Key className="w-3.5 h-3.5 text-[#C4A45B]" />
-            <span className="hidden sm:inline">Cambiar Clave</span>
-          </button>
 
           <button
             onClick={handleLogout}
             title="Cerrar Sesión"
-            className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-[#FAF7F0] transition-colors"
+            className="p-2 rounded-xl bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white transition-colors"
           >
             <LogOut className="w-4 h-4" />
           </button>
 
           <button
             onClick={onClose}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#C4A45B] hover:bg-[#b5954c] text-[#183728] text-xs font-bold uppercase tracking-wider transition-colors shadow-sm"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#C4A45B] hover:bg-[#b5954c] text-[#0D1410] text-xs font-semibold transition-colors shadow-sm"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Ver Sitio Web</span>
+            <span className="hidden sm:inline">Ver Web</span>
           </button>
         </div>
       </header>
 
       {/* Navigation Sub-bar */}
-      <div className="bg-[#183728] text-[#FAF7F0] px-4 sm:px-8 border-b border-[#C4A45B]/40 flex items-center justify-between gap-4 overflow-x-auto shrink-0">
-        <nav className="flex items-center gap-1 sm:gap-2 py-2">
+      <div className="bg-[#121A15] text-[#FAF7F0] px-4 sm:px-8 border-b border-stone-800 flex items-center justify-between gap-4 overflow-x-auto shrink-0">
+        <nav className="flex items-center gap-1.5 py-2">
           <button
             onClick={() => setActiveTab('finanzas')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium tracking-wide flex items-center gap-2 transition-all ${
               activeTab === 'finanzas'
-                ? 'bg-[#C4A45B] text-[#183728] shadow-sm'
-                : 'text-[#FAF7F0]/80 hover:text-white hover:bg-white/10'
+                ? 'bg-white/15 text-white shadow-xs'
+                : 'text-stone-400 hover:text-stone-200 hover:bg-white/5'
             }`}
           >
-            <TrendingUp className="w-3.5 h-3.5" />
+            <TrendingUp className="w-3.5 h-3.5 text-[#C4A45B]" />
             <span>Contabilidad Mensual</span>
           </button>
 
           <button
             onClick={() => setActiveTab('inventario')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium tracking-wide flex items-center gap-2 transition-all ${
               activeTab === 'inventario'
-                ? 'bg-[#C4A45B] text-[#183728] shadow-sm'
-                : 'text-[#FAF7F0]/80 hover:text-white hover:bg-white/10'
+                ? 'bg-white/15 text-white shadow-xs'
+                : 'text-stone-400 hover:text-stone-200 hover:bg-white/5'
             }`}
           >
-            <Package className="w-3.5 h-3.5" />
+            <Package className="w-3.5 h-3.5 text-[#C4A45B]" />
             <span>Inventario ({products.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('servicios')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium tracking-wide flex items-center gap-2 transition-all ${
               activeTab === 'servicios'
-                ? 'bg-[#C4A45B] text-[#183728] shadow-sm'
-                : 'text-[#FAF7F0]/80 hover:text-white hover:bg-white/10'
+                ? 'bg-white/15 text-white shadow-xs'
+                : 'text-stone-400 hover:text-stone-200 hover:bg-white/5'
             }`}
           >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Servicios Cobrados</span>
+            <Sparkles className="w-3.5 h-3.5 text-[#C4A45B]" />
+            <span>Servicios Realizados</span>
           </button>
         </nav>
 
         {/* Month Picker for Accounting */}
         <div className="flex items-center gap-2 py-2 shrink-0 text-xs">
-          <span className="text-stone-300 hidden md:inline">Mes a Consultar:</span>
+          <span className="text-stone-400 hidden md:inline">Período:</span>
           <input
             type="month"
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            className="px-2.5 py-1.5 rounded-lg bg-black/40 border border-[#C4A45B]/60 text-xs text-[#FAF7F0] focus:outline-none"
+            className="px-2.5 py-1 rounded-md bg-stone-900 border border-stone-700 text-xs text-stone-200 focus:outline-none focus:border-[#C4A45B]"
           />
         </div>
       </div>
@@ -555,137 +593,155 @@ export default function AdminPortal({
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-8 max-w-7xl mx-auto w-full space-y-6">
         
-        {/* TAB 1: FINANZAS Y CONTABILIDAD MENSUAL */}
+        {/* ================================================================ */}
+        {/* TAB 1: FINANZAS Y CONTABILIDAD MENSUAL                           */}
+        {/* ================================================================ */}
         {activeTab === 'finanzas' && (
-          <div className="space-y-6">
+          <div className="space-y-6 animate-fade-in">
             
-            {/* Header Title */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#D4C4A3] pb-4">
+            {/* Header & Quick Action Buttons */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200 pb-4">
               <div>
-                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#9E7F36]">
-                  Reporte Financiero Oficial
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+                  Resumen de Ingresos & Ventas
                 </span>
-                <h2 className="text-2xl sm:text-3xl font-serif font-bold text-[#183728]">
-                  Contabilidad: {new Date(selectedMonth + '-02').toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }).toUpperCase()}
+                <h2 className="text-xl sm:text-2xl font-serif font-bold text-[#183728] capitalize">
+                  {new Date(selectedMonth + '-02').toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}
                 </h2>
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => setIsRecordSaleOpen(true)}
-                  className="px-3.5 py-2 rounded-xl bg-[#183728] text-[#FAF7F0] text-xs font-bold uppercase tracking-wider hover:bg-[#0f241a] transition-all flex items-center gap-1.5 shadow-sm"
+                  className="px-3.5 py-2 rounded-xl bg-[#183728] text-white text-xs font-semibold hover:bg-[#122b1f] transition-all flex items-center gap-1.5 shadow-sm"
                 >
                   <Plus className="w-3.5 h-3.5 text-[#C4A45B]" />
                   <span>Venta Producto</span>
                 </button>
                 <button
                   onClick={() => setIsRecordServiceOpen(true)}
-                  className="px-3.5 py-2 rounded-xl bg-[#C4A45B] text-[#183728] text-xs font-bold uppercase tracking-wider hover:bg-[#b5954c] transition-all flex items-center gap-1.5 shadow-sm"
+                  className="px-3.5 py-2 rounded-xl bg-white text-[#183728] border border-stone-300 text-xs font-semibold hover:bg-stone-50 transition-all flex items-center gap-1.5 shadow-sm"
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus className="w-3.5 h-3.5 text-stone-500" />
                   <span>Cobro Servicio</span>
                 </button>
               </div>
             </div>
 
-            {/* 4 Financial Highlight Cards */}
+            {/* 4 Financial Metric Cards (Harmonious Minimalist Design) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               
-              {/* Grand Total */}
-              <div className="p-5 rounded-2xl bg-[#0A0F0D] text-[#FAF7F0] border-2 border-[#C4A45B] shadow-xl">
+              {/* Card 1: Grand Total Revenue */}
+              <div className="p-5 rounded-2xl bg-white border border-stone-200/90 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#C4A45B]">
+                  <span className="text-[11px] font-semibold tracking-wider text-stone-500 uppercase">
                     Facturación Total
                   </span>
-                  <DollarSign className="w-5 h-5 text-[#C4A45B]" />
+                  <div className="w-8 h-8 rounded-lg bg-stone-100 flex items-center justify-center text-[#9E7F36]">
+                    <DollarSign className="w-4 h-4" />
+                  </div>
                 </div>
-                <h3 className="text-3xl font-serif font-bold text-[#FAF7F0] mt-2">
-                  RD${grandTotalRevenue.toLocaleString()}
-                </h3>
-                <p className="text-[11px] text-stone-400 mt-1">
-                  Faciales + Productos en el mes
-                </p>
+                <div className="mt-3">
+                  <h3 className="text-2xl sm:text-3xl font-serif font-bold text-[#183728]">
+                    RD${grandTotalRevenue.toLocaleString()}
+                  </h3>
+                  <p className="text-xs text-stone-500 mt-1">
+                    Servicios y productos del mes
+                  </p>
+                </div>
               </div>
 
-              {/* Facial & Massage Services Total */}
-              <div className="p-5 rounded-2xl bg-white border border-[#D4C4A3] shadow-sm">
+              {/* Card 2: Facial & Cabin Services */}
+              <div className="p-5 rounded-2xl bg-white border border-stone-200/90 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#9E7F36]">
-                    Ingresos Faciales & Cabina
+                  <span className="text-[11px] font-semibold tracking-wider text-stone-500 uppercase">
+                    Faciales & Cabina
                   </span>
-                  <Sparkles className="w-5 h-5 text-[#183728]" />
+                  <div className="w-8 h-8 rounded-lg bg-stone-100 flex items-center justify-center text-[#183728]">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
                 </div>
-                <h3 className="text-2xl font-serif font-bold text-[#183728] mt-2">
-                  RD${totalServicesRevenue.toLocaleString()}
-                </h3>
-                <p className="text-[11px] text-stone-500 mt-1">
-                  {monthlyServices.length} servicios realizados
-                </p>
+                <div className="mt-3">
+                  <h3 className="text-2xl sm:text-3xl font-serif font-bold text-[#183728]">
+                    RD${totalServicesRevenue.toLocaleString()}
+                  </h3>
+                  <p className="text-xs text-stone-500 mt-1">
+                    {monthlyServices.length} servicios realizados
+                  </p>
+                </div>
               </div>
 
-              {/* Product Sales Total */}
-              <div className="p-5 rounded-2xl bg-white border border-[#D4C4A3] shadow-sm">
+              {/* Card 3: Product Sales */}
+              <div className="p-5 rounded-2xl bg-white border border-stone-200/90 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#9E7F36]">
-                    Ventas de Productos
+                  <span className="text-[11px] font-semibold tracking-wider text-stone-500 uppercase">
+                    Ventas Productos
                   </span>
-                  <ShoppingBag className="w-5 h-5 text-[#9E7F36]" />
+                  <div className="w-8 h-8 rounded-lg bg-stone-100 flex items-center justify-center text-stone-700">
+                    <ShoppingBag className="w-4 h-4" />
+                  </div>
                 </div>
-                <h3 className="text-2xl font-serif font-bold text-[#183728] mt-2">
-                  RD${totalSalesRevenue.toLocaleString()}
-                </h3>
-                <p className="text-[11px] text-stone-500 mt-1">
-                  {monthlySales.length} transacciones registradas
-                </p>
+                <div className="mt-3">
+                  <h3 className="text-2xl sm:text-3xl font-serif font-bold text-[#183728]">
+                    RD${totalSalesRevenue.toLocaleString()}
+                  </h3>
+                  <p className="text-xs text-stone-500 mt-1">
+                    {monthlySales.length} transacciones registradas
+                  </p>
+                </div>
               </div>
 
-              {/* Net Profit in Products */}
-              <div className="p-5 rounded-2xl bg-emerald-900/10 border border-emerald-500/30 shadow-sm">
+              {/* Card 4: Net Profit on Products */}
+              <div className="p-5 rounded-2xl bg-white border border-stone-200/90 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-800">
-                    Ganancia Neta en Productos
+                  <span className="text-[11px] font-semibold tracking-wider text-stone-500 uppercase">
+                    Ganancia Neta
                   </span>
-                  <TrendingUp className="w-5 h-5 text-emerald-700" />
+                  <div className="w-8 h-8 rounded-lg bg-stone-100 flex items-center justify-center text-emerald-700">
+                    <TrendingUp className="w-4 h-4" />
+                  </div>
                 </div>
-                <h3 className="text-2xl font-serif font-bold text-emerald-900 mt-2">
-                  RD${totalSalesProfit.toLocaleString()}
-                </h3>
-                <p className="text-[11px] text-emerald-700 mt-1">
-                  Ganancia libre tras costo de compra
-                </p>
+                <div className="mt-3">
+                  <h3 className="text-2xl sm:text-3xl font-serif font-bold text-[#183728]">
+                    RD${totalSalesProfit.toLocaleString()}
+                  </h3>
+                  <p className="text-xs text-stone-500 mt-1">
+                    Margen libre en productos
+                  </p>
+                </div>
               </div>
 
             </div>
 
-            {/* Transactions Split Table */}
+            {/* Split Breakdown Tables */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               
-              {/* Left: Monthly Product Sales Table */}
-              <div className="bg-white rounded-2xl border border-[#D4C4A3] p-5 shadow-sm space-y-3">
-                <div className="flex items-center justify-between border-b border-[#F2ECE0] pb-2">
-                  <h4 className="text-sm font-serif font-bold text-[#183728] flex items-center gap-2">
-                    <ShoppingBag className="w-4 h-4 text-[#C4A45B]" />
+              {/* Left: Product Sales */}
+              <div className="bg-white rounded-2xl border border-stone-200/90 p-5 shadow-xs space-y-3">
+                <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+                  <h4 className="text-sm font-semibold text-[#183728] flex items-center gap-2">
+                    <ShoppingBag className="w-4 h-4 text-stone-500" />
                     <span>Productos Vendidos ({monthlySales.length})</span>
                   </h4>
-                  <span className="text-xs font-bold text-[#183728]">RD${totalSalesRevenue.toLocaleString()}</span>
+                  <span className="text-xs font-semibold text-stone-700">RD${totalSalesRevenue.toLocaleString()}</span>
                 </div>
 
                 {monthlySales.length === 0 ? (
-                  <p className="text-xs text-stone-500 py-6 text-center italic">
-                    No hay ventas de productos registradas en este mes.
+                  <p className="text-xs text-stone-400 py-8 text-center">
+                    No hay ventas registradas en este período.
                   </p>
                 ) : (
                   <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                     {monthlySales.map((sale) => (
-                      <div key={sale.id} className="p-3 rounded-xl bg-[#FAF7F0] border border-[#E2D8C3] flex items-center justify-between text-xs">
+                      <div key={sale.id} className="p-3 rounded-xl bg-stone-50/70 border border-stone-200/70 flex items-center justify-between text-xs hover:bg-stone-50 transition-colors">
                         <div>
-                          <p className="font-bold text-[#183728]">{sale.producto_nombre}</p>
-                          <span className="text-[10px] text-stone-500">
-                            {new Date(sale.fecha).toLocaleDateString('es-ES')} • {sale.cantidad} unidad(es) • {sale.metodo_pago}
+                          <p className="font-semibold text-stone-900">{sale.producto_nombre}</p>
+                          <span className="text-[11px] text-stone-500">
+                            {new Date(sale.fecha).toLocaleDateString('es-ES')} • {sale.cantidad} ud. • {sale.metodo_pago}
                           </span>
                         </div>
                         <div className="text-right">
-                          <span className="font-bold text-[#183728]">RD${sale.total_venta.toLocaleString()}</span>
-                          <p className="text-[10px] text-emerald-700 font-semibold">+RD${sale.ganancia_neta.toLocaleString()} neta</p>
+                          <span className="font-semibold text-stone-900">RD${sale.total_venta.toLocaleString()}</span>
+                          <p className="text-[10px] text-emerald-700 font-medium">+RD${sale.ganancia_neta.toLocaleString()} neta</p>
                         </div>
                       </div>
                     ))}
@@ -693,33 +749,33 @@ export default function AdminPortal({
                 )}
               </div>
 
-              {/* Right: Monthly Services Performed Table */}
-              <div className="bg-white rounded-2xl border border-[#D4C4A3] p-5 shadow-sm space-y-3">
-                <div className="flex items-center justify-between border-b border-[#F2ECE0] pb-2">
-                  <h4 className="text-sm font-serif font-bold text-[#183728] flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-[#C4A45B]" />
-                    <span>Faciales & Masajes Cobrados ({monthlyServices.length})</span>
+              {/* Right: Performed Services */}
+              <div className="bg-white rounded-2xl border border-stone-200/90 p-5 shadow-xs space-y-3">
+                <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+                  <h4 className="text-sm font-semibold text-[#183728] flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-stone-500" />
+                    <span>Servicios Realizados ({monthlyServices.length})</span>
                   </h4>
-                  <span className="text-xs font-bold text-[#183728]">RD${totalServicesRevenue.toLocaleString()}</span>
+                  <span className="text-xs font-semibold text-stone-700">RD${totalServicesRevenue.toLocaleString()}</span>
                 </div>
 
                 {monthlyServices.length === 0 ? (
-                  <p className="text-xs text-stone-500 py-6 text-center italic">
-                    No hay servicios registrados en este mes.
+                  <p className="text-xs text-stone-400 py-8 text-center">
+                    No hay servicios registrados en este período.
                   </p>
                 ) : (
                   <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                     {monthlyServices.map((serv) => (
-                      <div key={serv.id} className="p-3 rounded-xl bg-[#FAF7F0] border border-[#E2D8C3] flex items-center justify-between text-xs">
+                      <div key={serv.id} className="p-3 rounded-xl bg-stone-50/70 border border-stone-200/70 flex items-center justify-between text-xs hover:bg-stone-50 transition-colors">
                         <div>
-                          <p className="font-bold text-[#183728]">{serv.servicio_nombre}</p>
-                          <span className="text-[10px] text-stone-500">
+                          <p className="font-semibold text-stone-900">{serv.servicio_nombre}</p>
+                          <span className="text-[11px] text-stone-500">
                             {serv.cliente_nombre} • {new Date(serv.fecha).toLocaleDateString('es-ES')} • {serv.metodo_pago}
                           </span>
                         </div>
                         <div className="text-right">
-                          <span className="font-bold text-[#183728]">RD${serv.monto_cobrado.toLocaleString()}</span>
-                          <span className="block text-[10px] text-[#9E7F36]">Cobrado</span>
+                          <span className="font-semibold text-stone-900">RD${serv.monto_cobrado.toLocaleString()}</span>
+                          <span className="block text-[10px] text-stone-400">Cobrado</span>
                         </div>
                       </div>
                     ))}
@@ -732,33 +788,35 @@ export default function AdminPortal({
           </div>
         )}
 
-        {/* TAB 2: INVENTARIO DE PRODUCTOS */}
+        {/* ================================================================ */}
+        {/* TAB 2: INVENTARIO DE PRODUCTOS                                  */}
+        {/* ================================================================ */}
         {activeTab === 'inventario' && (
-          <div className="space-y-6">
+          <div className="space-y-6 animate-fade-in">
             
             {/* Header & Controls */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#D4C4A3] pb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200 pb-4">
               <div>
-                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#9E7F36]">
-                  Control de Almacén & Cabina
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+                  Control de Almacén
                 </span>
-                <h2 className="text-2xl sm:text-3xl font-serif font-bold text-[#183728]">
+                <h2 className="text-xl sm:text-2xl font-serif font-bold text-[#183728]">
                   Inventario de Productos
                 </h2>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => setIsRecordSaleOpen(true)}
-                  className="px-4 py-2.5 rounded-xl bg-[#183728] text-[#FAF7F0] text-xs font-bold uppercase tracking-wider hover:bg-[#0f241a] transition-all flex items-center gap-1.5 shadow-sm"
+                  className="px-3.5 py-2 rounded-xl bg-[#183728] text-white text-xs font-semibold hover:bg-[#122b1f] transition-all flex items-center gap-1.5 shadow-sm"
                 >
-                  <ShoppingBag className="w-4 h-4 text-[#C4A45B]" />
+                  <ShoppingBag className="w-3.5 h-3.5 text-[#C4A45B]" />
                   <span>Registrar Venta</span>
                 </button>
                 <button
                   onClick={() => setIsAddProductOpen(true)}
-                  className="px-4 py-2.5 rounded-xl bg-[#C4A45B] text-[#183728] text-xs font-bold uppercase tracking-wider hover:bg-[#b5954c] transition-all flex items-center gap-1.5 shadow-sm"
+                  className="px-3.5 py-2 rounded-xl bg-white text-[#183728] border border-stone-300 text-xs font-semibold hover:bg-stone-50 transition-all flex items-center gap-1.5 shadow-sm"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-3.5 h-3.5" />
                   <span>Nuevo Producto</span>
                 </button>
               </div>
@@ -770,20 +828,17 @@ export default function AdminPortal({
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Buscar por nombre de producto o categoría..."
-                className="w-full pl-10 pr-4 py-3 rounded-2xl border border-[#D4C4A3] bg-white text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#183728]"
+                placeholder="Buscar por nombre o categoría..."
+                className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-stone-300 bg-white text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#183728]"
               />
-              <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-3.5" />
+              <Search className="w-4 h-4 text-stone-400 absolute left-3 top-3" />
             </div>
 
-            {/* Low Stock Warning Banner if applicable */}
+            {/* Low Stock Warning */}
             {products.some(p => p.stock_actual <= (p.stock_minimo || 2)) && (
-              <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 flex items-center gap-3 text-xs">
-                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
-                <div>
-                  <strong className="block font-bold">Atención: Productos con poco inventario</strong>
-                  <span>Hay artículos que han alcanzado el stock mínimo para venta o uso en cabina.</span>
-                </div>
+              <div className="p-3.5 rounded-xl bg-amber-50/80 border border-amber-200 text-amber-900 flex items-center gap-2.5 text-xs">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>Hay productos con inventario igual o inferior al stock mínimo.</span>
               </div>
             )}
 
@@ -797,60 +852,60 @@ export default function AdminPortal({
                   <div
                     key={prod.id}
                     className={`p-5 rounded-2xl bg-white border transition-all space-y-3 relative flex flex-col justify-between ${
-                      isLow ? 'border-amber-400 shadow-md ring-1 ring-amber-300' : 'border-[#D4C4A3] shadow-sm'
+                      isLow ? 'border-amber-300 ring-1 ring-amber-200' : 'border-stone-200/90 shadow-xs'
                     }`}
                   >
                     <div>
                       <div className="flex items-start justify-between gap-2">
-                        <span className="text-[10px] uppercase font-bold text-stone-400 tracking-wider">
+                        <span className="text-[10px] uppercase font-semibold text-stone-400 tracking-wider">
                           {prod.categoria}
                         </span>
                         <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
                             isLow 
-                              ? 'bg-amber-100 text-amber-800 border border-amber-300' 
-                              : 'bg-emerald-100 text-emerald-800'
+                              ? 'bg-amber-100 text-amber-800' 
+                              : 'bg-stone-100 text-stone-700'
                           }`}
                         >
-                          Stock: {prod.stock_actual} uds
+                          Stock: {prod.stock_actual}
                         </span>
                       </div>
 
-                      <h4 className="font-serif font-bold text-base text-[#183728] mt-1">
+                      <h4 className="font-semibold text-sm text-stone-900 mt-1">
                         {prod.nombre}
                       </h4>
                     </div>
 
-                    <div className="space-y-2 pt-2 border-t border-[#F2ECE0] text-xs">
-                      <div className="flex justify-between text-stone-600">
+                    <div className="space-y-1.5 pt-2 border-t border-stone-100 text-xs">
+                      <div className="flex justify-between text-stone-500">
                         <span>Costo de compra:</span>
                         <span>RD${Number(prod.costo || 0).toLocaleString()}</span>
                       </div>
-                      <div className="flex justify-between font-bold text-[#183728]">
+                      <div className="flex justify-between font-semibold text-stone-900">
                         <span>Precio de venta:</span>
                         <span>RD${Number(prod.precio_venta || 0).toLocaleString()}</span>
                       </div>
-                      <div className="flex justify-between text-emerald-700 text-[11px] font-semibold">
+                      <div className="flex justify-between text-emerald-700 text-[11px] font-medium">
                         <span>Margen de ganancia:</span>
                         <span>+RD${gananciaUnidad.toLocaleString()} / ud</span>
                       </div>
                     </div>
 
-                    {/* Quick Stock Controls */}
-                    <div className="pt-3 border-t border-[#F2ECE0] flex items-center justify-between gap-2">
+                    {/* Stock Controls */}
+                    <div className="pt-3 border-t border-stone-100 flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5">
                         <button
                           onClick={() => handleAdjustStock(prod.id, -1)}
                           title="Restar 1 unidad"
-                          className="w-7 h-7 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold flex items-center justify-center text-xs"
+                          className="w-7 h-7 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold flex items-center justify-center text-xs transition-colors"
                         >
                           -
                         </button>
-                        <span className="text-xs font-bold px-2 text-[#183728]">{prod.stock_actual}</span>
+                        <span className="text-xs font-semibold px-2 text-stone-800">{prod.stock_actual}</span>
                         <button
                           onClick={() => handleAdjustStock(prod.id, 1)}
-                          title="Sumar 1 unidad (Reabastecer)"
-                          className="w-7 h-7 rounded-lg bg-[#183728] text-white hover:bg-[#0f241a] font-bold flex items-center justify-center text-xs"
+                          title="Sumar 1 unidad"
+                          className="w-7 h-7 rounded-lg bg-[#183728] text-white hover:bg-[#0f241a] font-bold flex items-center justify-center text-xs transition-colors"
                         >
                           +
                         </button>
@@ -858,7 +913,7 @@ export default function AdminPortal({
 
                       <button
                         onClick={() => handleDeleteProduct(prod.id)}
-                        className="text-stone-400 hover:text-red-600 p-1.5 transition-colors"
+                        className="text-stone-300 hover:text-red-600 p-1.5 transition-colors"
                         title="Eliminar producto"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -873,57 +928,59 @@ export default function AdminPortal({
           </div>
         )}
 
-        {/* TAB 3: SERVICIOS COBRADOS */}
+        {/* ================================================================ */}
+        {/* TAB 3: SERVICIOS REALIZADOS                                     */}
+        {/* ================================================================ */}
         {activeTab === 'servicios' && (
-          <div className="space-y-6">
+          <div className="space-y-6 animate-fade-in">
             
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#D4C4A3] pb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200 pb-4">
               <div>
-                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#9E7F36]">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-500">
                   Registro de Procedimientos
                 </span>
-                <h2 className="text-2xl sm:text-3xl font-serif font-bold text-[#183728]">
+                <h2 className="text-xl sm:text-2xl font-serif font-bold text-[#183728]">
                   Faciales y Masajes Realizados
                 </h2>
               </div>
               <button
                 onClick={() => setIsRecordServiceOpen(true)}
-                className="px-4 py-2.5 rounded-xl bg-[#C4A45B] text-[#183728] text-xs font-bold uppercase tracking-wider hover:bg-[#b5954c] transition-all flex items-center gap-1.5 shadow-sm"
+                className="px-3.5 py-2 rounded-xl bg-[#183728] text-white text-xs font-semibold hover:bg-[#122b1f] transition-all flex items-center gap-1.5 shadow-sm"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-3.5 h-3.5 text-[#C4A45B]" />
                 <span>Registrar Cobro</span>
               </button>
             </div>
 
             {/* List */}
-            <div className="bg-white rounded-3xl border border-[#D4C4A3] p-6 shadow-sm space-y-4">
-              <div className="flex items-center justify-between border-b border-[#F2ECE0] pb-3">
-                <span className="text-xs font-bold uppercase tracking-wider text-stone-500">
+            <div className="bg-white rounded-2xl border border-stone-200/90 p-5 shadow-xs space-y-4">
+              <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+                <span className="text-xs font-medium text-stone-500">
                   Historial de Servicios ({completedServices.length})
                 </span>
-                <span className="text-xs font-bold text-[#183728]">
+                <span className="text-xs font-semibold text-stone-900">
                   Total Acumulado: RD${completedServices.reduce((acc, s) => acc + Number(s.monto_cobrado || 0), 0).toLocaleString()}
                 </span>
               </div>
 
               {completedServices.length === 0 ? (
-                <p className="text-xs text-stone-500 py-8 text-center italic">
+                <p className="text-xs text-stone-400 py-8 text-center">
                   Aún no hay servicios registrados.
                 </p>
               ) : (
-                <div className="divide-y divide-[#F2ECE0] space-y-2">
+                <div className="divide-y divide-stone-100 space-y-2">
                   {completedServices.map((serv) => (
                     <div key={serv.id} className="pt-3 pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                       <div>
-                        <p className="font-serif font-bold text-sm text-[#183728]">{serv.servicio_nombre}</p>
-                        <p className="text-stone-600 mt-0.5">
-                          Paciente: <strong>{serv.cliente_nombre}</strong> • {new Date(serv.fecha).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                        <p className="font-semibold text-stone-900">{serv.servicio_nombre}</p>
+                        <p className="text-stone-500 mt-0.5">
+                          Paciente: <strong className="text-stone-700">{serv.cliente_nombre}</strong> • {new Date(serv.fecha).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
                         </p>
                         {serv.notas && <p className="text-[11px] text-stone-400 italic mt-0.5">{serv.notas}</p>}
                       </div>
                       <div className="text-right shrink-0">
-                        <span className="text-base font-serif font-bold text-[#183728]">RD${Number(serv.monto_cobrado).toLocaleString()}</span>
-                        <span className="block text-[10px] text-[#9E7F36] uppercase font-bold">{serv.metodo_pago}</span>
+                        <span className="text-sm font-semibold text-stone-900">RD${Number(serv.monto_cobrado).toLocaleString()}</span>
+                        <span className="block text-[10px] text-stone-400 font-medium">{serv.metodo_pago}</span>
                       </div>
                     </div>
                   ))}
@@ -940,31 +997,31 @@ export default function AdminPortal({
       {/* MODAL 1: AGREGAR NUEVO PRODUCTO                                */}
       {/* ============================================================== */}
       {isAddProductOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in text-left">
-          <div className="bg-[#FAF7F0] rounded-3xl max-w-md w-full p-6 border-2 border-[#C4A45B] shadow-2xl space-y-4">
-            <h3 className="text-lg font-serif font-bold text-[#183728]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/70 backdrop-blur-sm animate-fade-in text-left">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-stone-200 shadow-2xl space-y-4">
+            <h3 className="text-base font-serif font-bold text-[#183728]">
               Agregar Producto al Inventario
             </h3>
 
             <form onSubmit={handleAddProduct} className="space-y-3 text-xs">
               <div>
-                <label className="block font-bold text-[#183728] mb-1">Nombre del Producto *</label>
+                <label className="block font-medium text-stone-700 mb-1">Nombre del Producto *</label>
                 <input
                   type="text"
                   required
                   value={newProductForm.nombre}
                   onChange={(e) => setNewProductForm({ ...newProductForm, nombre: e.target.value })}
                   placeholder="Ej: Sérum Vitamina C 15%"
-                  className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white focus:ring-2 focus:ring-[#183728] focus:outline-none"
+                  className="w-full p-2.5 rounded-xl border border-stone-300 bg-stone-50/50 focus:bg-white focus:ring-2 focus:ring-[#183728] focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-[#183728] mb-1">Categoría</label>
+                <label className="block font-medium text-stone-700 mb-1">Categoría</label>
                 <select
                   value={newProductForm.categoria}
                   onChange={(e) => setNewProductForm({ ...newProductForm, categoria: e.target.value })}
-                  className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white focus:ring-2 focus:ring-[#183728] focus:outline-none"
+                  className="w-full p-2.5 rounded-xl border border-stone-300 bg-white focus:ring-2 focus:ring-[#183728] focus:outline-none"
                 >
                   <option value="Protección Solar">Protección Solar</option>
                   <option value="Sérums">Sérums</option>
@@ -977,18 +1034,18 @@ export default function AdminPortal({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-[#183728] mb-1">Costo de Compra (RD$)</label>
+                  <label className="block font-medium text-stone-700 mb-1">Costo de Compra (RD$)</label>
                   <input
                     type="number"
                     min="0"
                     value={newProductForm.costo}
                     onChange={(e) => setNewProductForm({ ...newProductForm, costo: e.target.value })}
                     placeholder="1200"
-                    className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white"
+                    className="w-full p-2.5 rounded-xl border border-stone-300 bg-white"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-[#183728] mb-1">Precio de Venta (RD$) *</label>
+                  <label className="block font-medium text-stone-700 mb-1">Precio de Venta (RD$) *</label>
                   <input
                     type="number"
                     required
@@ -996,32 +1053,32 @@ export default function AdminPortal({
                     value={newProductForm.precio_venta}
                     onChange={(e) => setNewProductForm({ ...newProductForm, precio_venta: e.target.value })}
                     placeholder="1850"
-                    className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white font-bold"
+                    className="w-full p-2.5 rounded-xl border border-stone-300 bg-white font-semibold"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-[#183728] mb-1">Cantidad Inicial</label>
+                  <label className="block font-medium text-stone-700 mb-1">Cantidad Inicial</label>
                   <input
                     type="number"
                     min="0"
                     value={newProductForm.stock_actual}
                     onChange={(e) => setNewProductForm({ ...newProductForm, stock_actual: e.target.value })}
                     placeholder="5"
-                    className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white"
+                    className="w-full p-2.5 rounded-xl border border-stone-300 bg-white"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-[#183728] mb-1">Alerta Stock Mínimo</label>
+                  <label className="block font-medium text-stone-700 mb-1">Alerta Stock Mínimo</label>
                   <input
                     type="number"
                     min="1"
                     value={newProductForm.stock_minimo}
                     onChange={(e) => setNewProductForm({ ...newProductForm, stock_minimo: e.target.value })}
                     placeholder="2"
-                    className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white"
+                    className="w-full p-2.5 rounded-xl border border-stone-300 bg-white"
                   />
                 </div>
               </div>
@@ -1030,13 +1087,13 @@ export default function AdminPortal({
                 <button
                   type="button"
                   onClick={() => setIsAddProductOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-[#D4C4A3] bg-white font-bold uppercase tracking-wider text-stone-600"
+                  className="flex-1 py-2 rounded-xl border border-stone-300 bg-white font-medium text-stone-600 hover:bg-stone-50"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-[#183728] text-white font-bold uppercase tracking-wider border border-[#C4A45B]"
+                  className="flex-1 py-2 rounded-xl bg-[#183728] text-white font-medium hover:bg-[#0f241a]"
                 >
                   Guardar
                 </button>
@@ -1047,26 +1104,26 @@ export default function AdminPortal({
       )}
 
       {/* ============================================================== */}
-      {/* MODAL 2: REGISTRAR VENTA DE PRODUCTO (Descuenta stock)         */}
+      {/* MODAL 2: REGISTRAR VENTA DE PRODUCTO                           */}
       {/* ============================================================== */}
       {isRecordSaleOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in text-left">
-          <div className="bg-[#FAF7F0] rounded-3xl max-w-md w-full p-6 border-2 border-[#C4A45B] shadow-2xl space-y-4">
-            <h3 className="text-lg font-serif font-bold text-[#183728]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/70 backdrop-blur-sm animate-fade-in text-left">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-stone-200 shadow-2xl space-y-4">
+            <h3 className="text-base font-serif font-bold text-[#183728]">
               Registrar Venta de Producto
             </h3>
-            <p className="text-xs text-stone-600">
+            <p className="text-xs text-stone-500">
               El stock se descontará automáticamente y sumará a la contabilidad del mes.
             </p>
 
             <form onSubmit={handleRecordSale} className="space-y-3 text-xs">
               <div>
-                <label className="block font-bold text-[#183728] mb-1">Producto a Vender *</label>
+                <label className="block font-medium text-stone-700 mb-1">Producto a Vender *</label>
                 <select
                   required
                   value={newSaleForm.producto_id}
                   onChange={(e) => setNewSaleForm({ ...newSaleForm, producto_id: e.target.value })}
-                  className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white focus:outline-none"
+                  className="w-full p-2.5 rounded-xl border border-stone-300 bg-white focus:outline-none"
                 >
                   <option value="">-- Seleccionar producto --</option>
                   {products.map((p) => (
@@ -1079,22 +1136,22 @@ export default function AdminPortal({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-[#183728] mb-1">Cantidad *</label>
+                  <label className="block font-medium text-stone-700 mb-1">Cantidad *</label>
                   <input
                     type="number"
                     min="1"
                     required
                     value={newSaleForm.cantidad}
                     onChange={(e) => setNewSaleForm({ ...newSaleForm, cantidad: e.target.value })}
-                    className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white font-bold"
+                    className="w-full p-2.5 rounded-xl border border-stone-300 bg-white font-semibold"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-[#183728] mb-1">Método de Pago</label>
+                  <label className="block font-medium text-stone-700 mb-1">Método de Pago</label>
                   <select
                     value={newSaleForm.metodo_pago}
                     onChange={(e) => setNewSaleForm({ ...newSaleForm, metodo_pago: e.target.value })}
-                    className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white"
+                    className="w-full p-2.5 rounded-xl border border-stone-300 bg-white"
                   >
                     <option value="Efectivo">Efectivo</option>
                     <option value="Transferencia">Transferencia</option>
@@ -1103,13 +1160,13 @@ export default function AdminPortal({
               </div>
 
               <div>
-                <label className="block font-bold text-[#183728] mb-1">Notas / Clienta (Opcional)</label>
+                <label className="block font-medium text-stone-700 mb-1">Notas / Paciente (Opcional)</label>
                 <input
                   type="text"
                   value={newSaleForm.notas}
                   onChange={(e) => setNewSaleForm({ ...newSaleForm, notas: e.target.value })}
                   placeholder="Ej: Vendido a paciente María Gómez"
-                  className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white"
+                  className="w-full p-2.5 rounded-xl border border-stone-300 bg-white"
                 />
               </div>
 
@@ -1117,14 +1174,14 @@ export default function AdminPortal({
                 <button
                   type="button"
                   onClick={() => setIsRecordSaleOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-[#D4C4A3] bg-white font-bold uppercase tracking-wider text-stone-600"
+                  className="flex-1 py-2 rounded-xl border border-stone-300 bg-white font-medium text-stone-600 hover:bg-stone-50"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={!newSaleForm.producto_id}
-                  className="flex-1 py-2.5 rounded-xl bg-[#183728] text-white font-bold uppercase tracking-wider border border-[#C4A45B] disabled:opacity-50"
+                  className="flex-1 py-2 rounded-xl bg-[#183728] text-white font-medium hover:bg-[#0f241a] disabled:opacity-50"
                 >
                   Cobrar y Descontar
                 </button>
@@ -1135,30 +1192,30 @@ export default function AdminPortal({
       )}
 
       {/* ============================================================== */}
-      {/* MODAL 3: REGISTRAR COBRO DE SERVICIO / FACIAL                  */}
+      {/* MODAL 3: REGISTRAR COBRO DE SERVICIO                           */}
       {/* ============================================================== */}
       {isRecordServiceOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in text-left">
-          <div className="bg-[#FAF7F0] rounded-3xl max-w-md w-full p-6 border-2 border-[#C4A45B] shadow-2xl space-y-4">
-            <h3 className="text-lg font-serif font-bold text-[#183728]">
-              Registrar Cobro de Procedimiento
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/70 backdrop-blur-sm animate-fade-in text-left">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-stone-200 shadow-2xl space-y-4">
+            <h3 className="text-base font-serif font-bold text-[#183728]">
+              Registrar Cobro de Servicio
             </h3>
 
             <form onSubmit={handleRecordService} className="space-y-3 text-xs">
               <div>
-                <label className="block font-bold text-[#183728] mb-1">Nombre de la Paciente *</label>
+                <label className="block font-medium text-stone-700 mb-1">Nombre de la Paciente *</label>
                 <input
                   type="text"
                   required
                   value={newServiceForm.cliente_nombre}
                   onChange={(e) => setNewServiceForm({ ...newServiceForm, cliente_nombre: e.target.value })}
                   placeholder="Ej: Laura Mercedes"
-                  className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white"
+                  className="w-full p-2.5 rounded-xl border border-stone-300 bg-white"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-[#183728] mb-1">Tratamiento Realizado</label>
+                <label className="block font-medium text-stone-700 mb-1">Tratamiento Realizado</label>
                 <select
                   value={newServiceForm.servicio_nombre}
                   onChange={(e) => {
@@ -1169,7 +1226,7 @@ export default function AdminPortal({
                       monto_cobrado: match ? match.price : newServiceForm.monto_cobrado
                     });
                   }}
-                  className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white"
+                  className="w-full p-2.5 rounded-xl border border-stone-300 bg-white"
                 >
                   {servicesData.map((s) => (
                     <option key={s.id} value={s.name}>
@@ -1182,22 +1239,22 @@ export default function AdminPortal({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-[#183728] mb-1">Monto Cobrado (RD$) *</label>
+                  <label className="block font-medium text-stone-700 mb-1">Monto Cobrado (RD$) *</label>
                   <input
                     type="number"
                     min="0"
                     required
                     value={newServiceForm.monto_cobrado}
                     onChange={(e) => setNewServiceForm({ ...newServiceForm, monto_cobrado: e.target.value })}
-                    className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white font-bold"
+                    className="w-full p-2.5 rounded-xl border border-stone-300 bg-white font-semibold"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-[#183728] mb-1">Método de Pago</label>
+                  <label className="block font-medium text-stone-700 mb-1">Método de Pago</label>
                   <select
                     value={newServiceForm.metodo_pago}
                     onChange={(e) => setNewServiceForm({ ...newServiceForm, metodo_pago: e.target.value })}
-                    className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white"
+                    className="w-full p-2.5 rounded-xl border border-stone-300 bg-white"
                   >
                     <option value="Transferencia">Transferencia</option>
                     <option value="Efectivo">Efectivo</option>
@@ -1206,13 +1263,13 @@ export default function AdminPortal({
               </div>
 
               <div>
-                <label className="block font-bold text-[#183728] mb-1">Notas (Opcional)</label>
+                <label className="block font-medium text-stone-700 mb-1">Notas (Opcional)</label>
                 <input
                   type="text"
                   value={newServiceForm.notas}
                   onChange={(e) => setNewServiceForm({ ...newServiceForm, notas: e.target.value })}
                   placeholder="Detalle o abono completado..."
-                  className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white"
+                  className="w-full p-2.5 rounded-xl border border-stone-300 bg-white"
                 />
               </div>
 
@@ -1220,108 +1277,15 @@ export default function AdminPortal({
                 <button
                   type="button"
                   onClick={() => setIsRecordServiceOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-[#D4C4A3] bg-white font-bold uppercase tracking-wider text-stone-600"
+                  className="flex-1 py-2 rounded-xl border border-stone-300 bg-white font-medium text-stone-600 hover:bg-stone-50"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-[#183728] text-white font-bold uppercase tracking-wider border border-[#C4A45B]"
+                  className="flex-1 py-2 rounded-xl bg-[#183728] text-white font-medium hover:bg-[#0f241a]"
                 >
                   Guardar Cobro
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* MODAL 4: CAMBIAR CONTRASEÑA DE ACCESO                         */}
-      {/* ============================================================== */}
-      {isChangePasswordOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in text-left">
-          <div className="bg-[#FAF7F0] rounded-3xl max-w-sm w-full p-6 border-2 border-[#C4A45B] shadow-2xl space-y-4">
-            <div className="flex items-center gap-2.5 text-[#183728]">
-              <div className="p-2 rounded-xl bg-[#183728] text-[#C4A45B]">
-                <Key className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-serif font-bold text-[#183728]">
-                  Cambiar Contraseña
-                </h3>
-                <p className="text-[11px] text-stone-500">
-                  Actualiza tu clave de acceso al panel
-                </p>
-              </div>
-            </div>
-
-            <form onSubmit={handleChangePassword} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-bold text-[#183728] mb-1">Contraseña Actual *</label>
-                <input
-                  type="password"
-                  required
-                  value={passwordForm.currentPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
-                  placeholder="Tu contraseña actual..."
-                  className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-[#183728] mb-1">Nueva Contraseña *</label>
-                <input
-                  type="password"
-                  required
-                  value={passwordForm.newPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                  placeholder="Mínimo 5 caracteres..."
-                  className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-[#183728] mb-1">Confirmar Nueva Contraseña *</label>
-                <input
-                  type="password"
-                  required
-                  value={passwordForm.confirmPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-                  placeholder="Repite la nueva contraseña..."
-                  className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white focus:outline-none"
-                />
-              </div>
-
-              {passwordError && (
-                <p className="p-2 rounded-lg bg-red-50 border border-red-200 text-red-700 text-[11px]">
-                  {passwordError}
-                </p>
-              )}
-
-              {passwordSuccess && (
-                <p className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-bold">
-                  {passwordSuccess}
-                </p>
-              )}
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsChangePasswordOpen(false);
-                    setPasswordError('');
-                    setPasswordSuccess('');
-                  }}
-                  className="flex-1 py-2.5 rounded-xl border border-[#D4C4A3] bg-white font-bold uppercase tracking-wider text-stone-600"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-[#183728] text-white font-bold uppercase tracking-wider border border-[#C4A45B]"
-                >
-                  Guardar
                 </button>
               </div>
             </form>
