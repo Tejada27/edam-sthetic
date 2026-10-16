@@ -63,7 +63,7 @@ export default function AdminAgenda({ appointments, onUpdateAppointment, onNewAp
             Agenda de Cabina & Fichas Técnicas
           </h1>
           <p className="text-xs text-stone-600 mt-1">
-            Valida los comprobantes de transferencia en pesos dominicanos (RD$) y consulta el historial clínico de cada clienta.
+            Valida los comprobantes de transferencia en pesos dominicanos (RD$) y consulta el historial de cada clienta.
           </p>
         </div>
 
@@ -281,7 +281,7 @@ export default function AdminAgenda({ appointments, onUpdateAppointment, onNewAp
 
             <div className="pr-8">
               <span className="text-[11px] uppercase tracking-widest text-[#9E7F36] font-bold">
-                EDAM Sthetic • Expediente Clínico de Cabina
+                EDAM Sthetic • Ficha Técnica de Cabina
               </span>
               <h3 className="text-2xl font-serif font-bold text-[#183728] mt-1">
                 Ficha Técnica: {selectedAppointmentForFicha.clientName}
@@ -339,7 +339,7 @@ export default function AdminAgenda({ appointments, onUpdateAppointment, onNewAp
                   rows="2"
                   value={evolutionNote}
                   onChange={(e) => setEvolutionNote(e.target.value)}
-                  placeholder="Agregar nueva observación clínica (activos aplicados, tolerancia de la piel, recomendación para casa)..."
+                  placeholder="Agregar nueva observación (activos aplicados, tolerancia de la piel, recomendación para casa)..."
                   className="w-full p-3 rounded-xl border border-[#D4C4A3] bg-white text-xs focus:ring-2 focus:ring-[#183728] focus:outline-none"
                 />
                 <button

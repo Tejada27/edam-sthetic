@@ -77,7 +77,7 @@ function App() {
             {/* 3. Catálogo de Tratamientos Oficial (Faciales & Masajes en RD$) */}
             <ServicesSection onSelectService={(service) => handleOpenBooking(service)} />
 
-            {/* 4. Conoce Nuestra Cabina Clínica & Tarjeta de Fidelidad */}
+            {/* 4. Conoce Nuestra Cabina & Tarjeta de Fidelidad */}
             <CabinTourSection onOpenBooking={() => handleOpenBooking(null)} />
 
             {/* 5. Recomendaciones Antes de los Procesos */}

@@ -60,7 +60,7 @@ export default function Hero({ onOpenBooking }) {
             
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#183728]/10 border border-[#C4A45B]/60 text-[#183728] text-xs font-bold uppercase tracking-wider">
               <img src="/logo_ea_black.png" alt="" className="w-4 h-4 rounded-full inline-block" />
-              <span>Cosmiatría Clínica & Cuidado Facial Personalizado</span>
+              <span>Cosmiatría & Cuidado Facial Personalizado</span>
             </div>
 
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-serif text-[#183728] leading-[1.1] font-bold">
@@ -174,7 +174,7 @@ export default function Hero({ onOpenBooking }) {
                     <>
                       <img
                         src="/cabin/atendiendo_paciente.jpg"
-                        alt="Atención de paciente en cabina clínica EDAM Sthetic"
+                        alt="Atención de paciente en cabina EDAM Sthetic"
                         className="w-full h-full object-cover object-center animate-fadeIn"
                       />
                       <div className="absolute top-3 left-3 bg-[#0A0F0D]/90 backdrop-blur-md px-3 py-1 rounded-full border border-[#C4A45B] text-[10px] font-bold text-[#FAF7F0] uppercase tracking-wider flex items-center gap-1.5">
@@ -204,7 +204,7 @@ export default function Hero({ onOpenBooking }) {
                       {heroView === 'paciente' ? (
                         <>
                           <span className="text-[10px] uppercase tracking-[0.2em] text-[#9E7F36] font-bold block">
-                            Cabina Clínica en Santo Domingo Este
+                            Cabina en Santo Domingo Este
                           </span>
                           <h3 className="text-xl font-serif font-bold text-[#183728]">
                             Atención Personalizada en Vivo

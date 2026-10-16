@@ -98,7 +98,7 @@ export default function LocationSection({ onOpenBooking }) {
                 <div className="pt-2 border-t border-white/20 text-xs text-[#FAF7F0]/90 space-y-2 text-left">
                   <div className="flex items-center justify-between">
                     <span>Atención:</span>
-                    <strong className="text-[#C4A45B]">Previa Cita</strong>
+                    <strong className="text-[#C4A45B]">Previa Cita (Mar, Jue, Vie, Sáb, Dom)</strong>
                   </div>
                   <div className="flex items-center justify-between">
                     <span>Tu Cosmiatra:</span>

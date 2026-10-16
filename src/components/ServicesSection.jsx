@@ -30,7 +30,7 @@ export default function ServicesSection({ onSelectService }) {
           </p>
 
           <p className="text-stone-600 text-xs sm:text-sm mt-2 font-light">
-            Procedimientos clínicos con aparatología de última generación. Consulta las recomendaciones de preparación antes de agendar tu cita.
+            Procedimientos especializados con aparatología de última generación. Consulta las recomendaciones de preparación antes de agendar tu cita.
           </p>
 
           {/* Category Filter Pills (Flyer button removed as requested) */}

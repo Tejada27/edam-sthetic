@@ -48,7 +48,7 @@ export default function Footer({ onOpenBooking }) {
             </p>
 
             <p className="text-xs text-[#FAF7F0]/80 leading-relaxed font-light">
-              Centro especializado en cosmiatría clínica, salud dérmica y bienestar integral junto a tu cosmiatra Katherine Encarnación.
+              Centro especializado en cosmiatría, salud dérmica y bienestar integral junto a tu cosmiatra Katherine Encarnación.
             </p>
 
             <div className="pt-1">

@@ -72,7 +72,7 @@ export default function RecommendationsGuide() {
                 </div>
                 <div className="mt-4 pt-3 border-t border-[#F2ECE0] flex items-center gap-1.5 text-[11px] font-semibold text-[#183728]">
                   <CheckCircle2 className="w-3.5 h-3.5 text-[#C4A45B]" />
-                  <span>Pauta de Cuidado Clínico</span>
+                  <span>Pauta de Cuidado Profesional</span>
                 </div>
               </div>
             );

@@ -233,7 +233,7 @@ export const servicesData = [
     deposit: 500,
     popular: false,
     shortDesc: 'Ayuda a tonificar, moldear y mejorar la circulación linfática en abdomen, piernas o brazos.',
-    image: '/cabin/dermocosmetica_aparatologia.jpg',
+    image: '/cabin/masaje_reductor_cabin.jpg',
     includedItems: [
       'Activación de ganglios linfáticos.',
       'Maniobras reductoras y moldeadoras vigorosas.',

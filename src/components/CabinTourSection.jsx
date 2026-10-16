@@ -8,9 +8,9 @@ export default function CabinTourSection({ onOpenBooking }) {
     {
       id: 'atendiendo',
       image: '/cabin/atendiendo_paciente.jpg',
-      title: 'Atención Clínica en Vivo',
+      title: 'Atención Personalizada en Vivo',
       category: 'Procedimiento Real',
-      description: 'Sesión facial con máscara de fototerapia LED azul y tecnología hidrofacial en cabina clínica.',
+      description: 'Sesión facial con máscara de fototerapia LED azul y tecnología hidrofacial en cabina.',
       highlight: 'Fototerapia LED + Hidrofacial'
     },
     {
@@ -25,9 +25,9 @@ export default function CabinTourSection({ onOpenBooking }) {
       id: 'productos',
       image: '/cabin/dermocosmetica_aparatologia.jpg',
       title: 'Dermocosmética y Aparatología',
-      category: 'Grado Médico',
+      category: 'Cuidado Avanzado',
       description: 'Trabajamos con activos de élite: Skinceuticals, La Roche-Posay, Vichy, e instrumental de cavitación y radiofrecuencia.',
-      highlight: 'Marcas Clínicas Certificadas'
+      highlight: 'Dermocosmética Certificada'
     },
     {
       id: 'panoramica',
@@ -64,13 +64,13 @@ export default function CabinTourSection({ onOpenBooking }) {
           </div>
 
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-serif text-[#183728] font-bold">
-            Conoce la Cabina Clínica <br className="hidden sm:inline" />
+            Conoce Nuestra Cabina <br className="hidden sm:inline" />
             <span className="italic font-normal text-[#9E7F36]">de EDAM Sthetic</span>
           </h2>
 
           <p className="text-stone-700 text-sm sm:text-base leading-relaxed font-light">
             Creemos en la transparencia total. Te mostramos fotos reales de nuestra cabina en Santo Domingo Este, en el cuñao Plaza Nueva Jerusalén (Calle El Sol, esquina Tulipán, entrando por la Hípica), 
-            diseñada bajo rigurosos estándares de higiene clínica, privacidad y confort para que disfrutes de tu momento de cuidado.
+            diseñada bajo rigurosos estándares de higiene, privacidad y confort para que disfrutes de tu momento de cuidado.
           </p>
         </div>
 

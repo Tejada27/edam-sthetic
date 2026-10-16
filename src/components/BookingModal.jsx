@@ -16,21 +16,59 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
   const [currentStep, setCurrentStep] = useState(preselectedService ? 2 : 1);
   const [selectedService, setSelectedService] = useState(preselectedService || servicesData[0]);
 
-  // Available dates (next 10 days)
-  const availableDates = Array.from({ length: 8 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() + i + 1);
-    return {
-      iso: d.toISOString().split('T')[0],
-      dayName: d.toLocaleDateString('es-ES', { weekday: 'short' }),
-      dayNumber: d.getDate(),
-      month: d.toLocaleDateString('es-ES', { month: 'short' })
-    };
-  });
+  // Official schedule from Katherine Encarnación
+  // Martes: 10:00 AM y 3:00 PM
+  // Jueves: 10:00 AM, 3:00 PM y 6:00 PM
+  // Viernes: 3:00 PM y 6:00 PM (Faciales; masajes no disponibles los viernes)
+  // Sábado: 6:00 PM (Solo tarde, no mañana)
+  // Domingo: 10:00 AM y 3:00 PM
+  const scheduleByDay = {
+    0: ['10:00 AM', '03:00 PM'],             // Domingo
+    2: ['10:00 AM', '03:00 PM'],             // Martes
+    4: ['10:00 AM', '03:00 PM', '06:00 PM'], // Jueves
+    5: ['03:00 PM', '06:00 PM'],             // Viernes
+    6: ['06:00 PM']                          // Sábado
+  };
 
-  const [selectedDate, setSelectedDate] = useState(availableDates[0]?.iso);
-  const timeSlots = ['09:00 AM', '10:30 AM', '12:00 PM', '02:00 PM', '03:30 PM', '05:00 PM'];
-  const [selectedTime, setSelectedTime] = useState(timeSlots[0]);
+  const isMassage = selectedService?.category === 'Masajes';
+
+  // Generate available working dates matching Katherine's schedule
+  const availableDates = [];
+  const today = new Date();
+  for (let i = 1; availableDates.length < 8 && i <= 28; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    const dayOfWeek = d.getDay();
+    if (scheduleByDay[dayOfWeek]) {
+      // Masajes no disponibles los viernes
+      if (isMassage && dayOfWeek === 5) {
+        continue;
+      }
+      availableDates.push({
+        iso: d.toISOString().split('T')[0],
+        dayName: d.toLocaleDateString('es-ES', { weekday: 'short' }),
+        dayNumber: d.getDate(),
+        month: d.toLocaleDateString('es-ES', { month: 'short' }),
+        dayOfWeek
+      });
+    }
+  }
+
+  const [selectedDate, setSelectedDate] = useState(() => availableDates[0]?.iso || '');
+
+  // Calculate slots dynamically for the selected date
+  const selectedDayOfWeek = selectedDate ? new Date(selectedDate + 'T12:00:00').getDay() : null;
+  const rawSlots = selectedDayOfWeek !== null && scheduleByDay[selectedDayOfWeek] ? scheduleByDay[selectedDayOfWeek] : ['10:00 AM', '03:00 PM'];
+  const timeSlots = isMassage && selectedDayOfWeek === 5 ? [] : rawSlots;
+
+  const [selectedTime, setSelectedTime] = useState(timeSlots[0] || '10:00 AM');
+
+  // Keep selectedTime synchronized if selectedDate or service changes
+  useEffect(() => {
+    if (timeSlots.length > 0 && !timeSlots.includes(selectedTime)) {
+      setSelectedTime(timeSlots[0]);
+    }
+  }, [selectedDate, selectedService]);
 
   // Essential client data
   const [clientData, setClientData] = useState({
@@ -158,13 +196,32 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
                 </div>
               </div>
 
+              {/* Official Hours Summary */}
+              <div className="p-3 rounded-2xl bg-[#183728]/5 border border-[#183728]/15 text-xs text-[#183728] space-y-1">
+                <p className="font-bold uppercase tracking-wider text-[#9E7F36] text-[10px]">
+                  Horarios Oficiales en Cabina:
+                </p>
+                <div className="text-stone-700 grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-0.5 text-[11px]">
+                  <p>• <strong>Martes:</strong> 10:00 AM y 3:00 PM</p>
+                  <p>• <strong>Jueves:</strong> 10:00 AM, 3:00 PM y 6:00 PM</p>
+                  <p>• <strong>Viernes:</strong> 3:00 PM y 6:00 PM</p>
+                  <p>• <strong>Sábado:</strong> 6:00 PM</p>
+                  <p>• <strong>Domingo:</strong> 10:00 AM y 3:00 PM</p>
+                </div>
+                {isMassage && (
+                  <p className="text-[10px] text-[#9E7F36] font-semibold pt-1 border-t border-[#183728]/10">
+                    💆 Masajes disponibles todos los días menos viernes y sábados en la mañana.
+                  </p>
+                )}
+              </div>
+
               {/* Date Selection */}
               <div>
                 <label className="block text-xs font-bold text-[#183728] uppercase tracking-wider mb-1.5">
-                  Fecha Disponible
+                  Elige un Día Disponible
                 </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {availableDates.slice(0, 4).map((d) => (
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                  {availableDates.slice(0, 6).map((d) => (
                     <button
                       key={d.iso}
                       type="button"
@@ -176,7 +233,7 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
                       }`}
                     >
                       <span className="block text-[9px] uppercase font-bold">{d.dayName}</span>
-                      <span className="block text-base font-bold font-serif my-0.5">{d.dayNumber}</span>
+                      <span className="block text-sm font-bold font-serif my-0.5">{d.dayNumber}</span>
                       <span className="block text-[9px] uppercase">{d.month}</span>
                     </button>
                   ))}
@@ -188,29 +245,35 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
                 <label className="block text-xs font-bold text-[#183728] uppercase tracking-wider mb-1.5">
                   Hora en Cabina
                 </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {timeSlots.map((slot) => {
-                    const booked = isSlotBooked(selectedDate, slot);
-                    return (
-                      <button
-                        key={slot}
-                        type="button"
-                        disabled={booked}
-                        onClick={() => setSelectedTime(slot)}
-                        className={`py-2 px-2 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                          booked
-                            ? 'bg-stone-200 text-stone-400 border-stone-300 cursor-not-allowed line-through'
-                            : selectedTime === slot
-                            ? 'border-[#C4A45B] bg-[#183728] text-[#FAF7F0] shadow-sm'
-                            : 'border-[#D4C4A3] bg-white text-[#183728] hover:bg-[#F2ECE0]'
-                        }`}
-                      >
-                        <Clock className="w-3 h-3 text-[#C4A45B]" />
-                        <span>{slot}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                {timeSlots.length > 0 ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {timeSlots.map((slot) => {
+                      const booked = isSlotBooked(selectedDate, slot);
+                      return (
+                        <button
+                          key={slot}
+                          type="button"
+                          disabled={booked}
+                          onClick={() => setSelectedTime(slot)}
+                          className={`py-2.5 px-2 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                            booked
+                              ? 'bg-stone-200 text-stone-400 border-stone-300 cursor-not-allowed line-through'
+                              : selectedTime === slot
+                              ? 'border-[#C4A45B] bg-[#183728] text-[#FAF7F0] shadow-sm'
+                              : 'border-[#D4C4A3] bg-white text-[#183728] hover:bg-[#F2ECE0]'
+                          }`}
+                        >
+                          <Clock className="w-3 h-3 text-[#C4A45B]" />
+                          <span>{slot}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-stone-500 italic p-3 bg-stone-100 rounded-xl">
+                    No hay turnos disponibles para esta fecha.
+                  </p>
+                )}
               </div>
 
             </div>

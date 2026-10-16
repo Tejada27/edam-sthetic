@@ -25,7 +25,7 @@ export default function AboutMe({ onOpenBooking }) {
       logo: '/logos/infotep.png',
       logoAlt: 'INFOTEP',
       title: 'Formación Técnica en Procesos Faciales',
-      description: 'Capacitación técnica especializada en protocolos clínicos, aparatología moderna y técnicas manuales faciales.',
+      description: 'Capacitación técnica especializada en protocolos estéticos, aparatología moderna y técnicas manuales faciales.',
       badge: 'En curso'
     }
   ];
@@ -85,7 +85,7 @@ export default function AboutMe({ onOpenBooking }) {
             {/* First-person warm & professional tone */}
             <div className="space-y-3 text-stone-700 font-light text-sm sm:text-base leading-relaxed">
               <p>
-                Te doy una cálida bienvenida a <strong className="font-semibold text-[#183728]">EDAM Sthetic</strong>. Mi compromiso como tu cosmiatra es brindarte un espacio de confianza, higiene y profesionalismo clínico donde cada paciente recibe una atención dedicada y adaptada a la salud de su piel.
+                Te doy una cálida bienvenida a <strong className="font-semibold text-[#183728]">EDAM Sthetic</strong>. Mi compromiso como tu cosmiatra es brindarte un espacio de confianza, higiene y profesionalismo donde cada paciente recibe una atención dedicada y adaptada a la salud de su piel.
               </p>
               <p>
                 No creo en fórmulas genéricas: cada piel tiene su propio ritmo y necesidades. Por eso, antes de iniciar cualquier tratamiento evaluamos juntos una <strong className="font-medium text-[#183728]">ficha técnica completa</strong> para que pueda seleccionar los principios activos y la aparatología más segura y efectiva para ti.
@@ -105,10 +105,10 @@ export default function AboutMe({ onOpenBooking }) {
                     key={idx}
                     className="p-4 rounded-2xl bg-white border border-[#D4C4A3] shadow-sm hover:border-[#C4A45B] transition-all flex items-center justify-between gap-4"
                   >
-                    <div className="space-y-1 flex-1">
-                      <div className="flex items-center gap-2">
+                    <div className="space-y-1 flex-1 min-w-0">
+                      <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
                         <span className="text-xs font-bold text-[#183728]">{cred.title}</span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#183728]/10 text-[#183728]">
+                        <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#183728]/10 text-[#183728] shrink-0 whitespace-nowrap">
                           {cred.badge}
                         </span>
                       </div>
