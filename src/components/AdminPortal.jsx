@@ -18,6 +18,14 @@ export default function AdminPortal({
   appointments, 
   onUpdateAppointment 
 }) {
+  // Lock background scroll when Admin Portal is active to improve performance
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
+
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     return sessionStorage.getItem('edam_admin_auth') === 'true';
@@ -96,19 +104,19 @@ export default function AdminPortal({
     localStorage.setItem('edam_services_data', JSON.stringify(completedServices));
   }, [completedServices]);
 
-  // Load from Supabase if configured
+  // Load from Supabase in parallel for high performance
   useEffect(() => {
     if (isSupabaseConfigured && supabase) {
       const fetchData = async () => {
         try {
-          const { data: pData } = await supabase.from('productos').select('*');
-          if (pData && pData.length > 0) setProducts(pData);
-
-          const { data: sData } = await supabase.from('ventas_productos').select('*');
-          if (sData) setSales(sData);
-
-          const { data: cData } = await supabase.from('servicios_realizados').select('*');
-          if (cData) setCompletedServices(cData);
+          const [pRes, sRes, cRes] = await Promise.all([
+            supabase.from('productos').select('*').order('created_at', { ascending: true }),
+            supabase.from('ventas_productos').select('*').order('fecha', { ascending: false }),
+            supabase.from('servicios_realizados').select('*').order('fecha', { ascending: false })
+          ]);
+          if (pRes.data && pRes.data.length > 0) setProducts(pRes.data);
+          if (sRes.data) setSales(sRes.data);
+          if (cRes.data) setCompletedServices(cRes.data);
         } catch (err) {
           console.error('Error al sincronizar con Supabase, usando caché local', err);
         }
@@ -117,8 +125,10 @@ export default function AdminPortal({
     }
   }, []);
 
-  // Brute-force lockout timer check
+  // Brute-force lockout timer check (only runs when unauthenticated)
   useEffect(() => {
+    if (isAuthenticated) return;
+
     const checkLockout = () => {
       const lockoutUntil = parseInt(sessionStorage.getItem('edam_admin_lockout_until') || '0', 10);
       const now = Date.now();
@@ -132,9 +142,9 @@ export default function AdminPortal({
     checkLockout();
     const interval = setInterval(checkLockout, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isAuthenticated]);
 
-  // Auto-logout after 20 minutes of user inactivity for security
+  // Auto-logout after 20 minutes of user inactivity (lightweight events only)
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -145,7 +155,7 @@ export default function AdminPortal({
       lastActivity = Date.now();
     };
 
-    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+    const events = ['pointerdown', 'keydown'];
     events.forEach(event => window.addEventListener(event, updateActivity, { passive: true }));
 
     const checkInactivity = setInterval(() => {
@@ -154,7 +164,7 @@ export default function AdminPortal({
         sessionStorage.removeItem('edam_admin_auth');
         setSessionExpiredNotice(true);
       }
-    }, 10000);
+    }, 30000);
 
     return () => {
       events.forEach(event => window.removeEventListener(event, updateActivity));
@@ -167,7 +177,6 @@ export default function AdminPortal({
     e.preventDefault();
     if (lockoutRemaining > 0) return;
 
-    // Secure password read strictly from Vercel Environment Variable (fallback for dev)
     const validPassword = (import.meta.env.VITE_ADMIN_PASSWORD || 'katherine2026').trim();
 
     if (pinInput.trim() === validPassword) {
@@ -242,9 +251,10 @@ export default function AdminPortal({
     const precio_venta = Number(newProductForm.precio_venta) || 0;
     const stock_actual = Number(newProductForm.stock_actual) || 0;
     const stock_minimo = Number(newProductForm.stock_minimo) || 2;
+    const tempId = `prod-${Date.now()}`;
 
     const newProd = {
-      id: `prod-${Date.now()}`,
+      id: tempId,
       nombre: newProductForm.nombre.trim(),
       categoria: newProductForm.categoria,
       costo,
@@ -255,10 +265,6 @@ export default function AdminPortal({
 
     setProducts(prev => [newProd, ...prev]);
 
-    if (isSupabaseConfigured && supabase) {
-      await supabase.from('productos').insert([newProd]);
-    }
-
     setNewProductForm({
       nombre: '',
       categoria: 'Cuidado Facial',
@@ -268,28 +274,56 @@ export default function AdminPortal({
       stock_minimo: '2'
     });
     setIsAddProductOpen(false);
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data } = await supabase.from('productos').insert([{
+          nombre: newProd.nombre,
+          categoria: newProd.categoria,
+          costo,
+          precio_venta,
+          stock_actual,
+          stock_minimo
+        }]).select();
+        if (data && data[0]) {
+          setProducts(prev => prev.map(p => p.id === tempId ? data[0] : p));
+        }
+      } catch (err) {
+        console.error('Error al guardar producto en Supabase', err);
+      }
+    }
   };
 
   // Adjust stock quickly (+1 or -1)
   const handleAdjustStock = async (prodId, delta) => {
+    let updatedStock = 0;
     setProducts(prev => prev.map(p => {
       if (p.id === prodId) {
-        const updatedStock = Math.max(0, Number(p.stock_actual || 0) + delta);
-        if (isSupabaseConfigured && supabase) {
-          supabase.from('productos').update({ stock_actual: updatedStock }).eq('id', prodId);
-        }
+        updatedStock = Math.max(0, Number(p.stock_actual || 0) + delta);
         return { ...p, stock_actual: updatedStock };
       }
       return p;
     }));
+
+    if (isSupabaseConfigured && supabase && !prodId.startsWith('prod-')) {
+      try {
+        await supabase.from('productos').update({ stock_actual: updatedStock }).eq('id', prodId);
+      } catch (err) {
+        console.error('Error al actualizar stock en Supabase', err);
+      }
+    }
   };
 
   // Delete product
   const handleDeleteProduct = async (prodId) => {
     if (window.confirm('¿Deseas eliminar este producto del inventario?')) {
       setProducts(prev => prev.filter(p => p.id !== prodId));
-      if (isSupabaseConfigured && supabase) {
-        await supabase.from('productos').delete().eq('id', prodId);
+      if (isSupabaseConfigured && supabase && !prodId.startsWith('prod-')) {
+        try {
+          await supabase.from('productos').delete().eq('id', prodId);
+        } catch (err) {
+          console.error('Error al eliminar producto en Supabase', err);
+        }
       }
     }
   };
@@ -310,9 +344,11 @@ export default function AdminPortal({
     const precioUnitario = Number(prod.precio_venta || 0);
     const totalVenta = precioUnitario * qty;
     const gananciaNeta = (precioUnitario - costoUnitario) * qty;
+    const tempId = `sale-${Date.now()}`;
+    const buyerNote = newSaleForm.notas ? newSaleForm.notas.trim() : '';
 
     const newSale = {
-      id: `sale-${Date.now()}`,
+      id: tempId,
       producto_id: prod.id,
       producto_nombre: prod.nombre,
       cantidad: qty,
@@ -322,30 +358,86 @@ export default function AdminPortal({
       ganancia_neta: gananciaNeta,
       metodo_pago: newSaleForm.metodo_pago,
       fecha: new Date().toISOString(),
-      notas: newSaleForm.notas
+      notas: buyerNote
     };
 
-    // Update sales list
+    // Update sales list immediately
     setSales(prev => [newSale, ...prev]);
 
-    // Deduct stock from product
+    // Deduct stock from product immediately
+    const updatedStock = prod.stock_actual - qty;
     setProducts(prev => prev.map(p => {
       if (p.id === prod.id) {
-        const updated = { ...p, stock_actual: p.stock_actual - qty };
-        if (isSupabaseConfigured && supabase) {
-          supabase.from('productos').update({ stock_actual: updated.stock_actual }).eq('id', p.id);
-        }
-        return updated;
+        return { ...p, stock_actual: updatedStock };
       }
       return p;
     }));
 
-    if (isSupabaseConfigured && supabase) {
-      await supabase.from('ventas_productos').insert([newSale]);
-    }
-
     setIsRecordSaleOpen(false);
     setNewSaleForm({ producto_id: '', cantidad: 1, metodo_pago: 'Efectivo', notas: '' });
+
+    // Sync to Supabase
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const dbPayload = {
+          producto_id: prod.id.startsWith('prod-') ? null : prod.id,
+          producto_nombre: prod.nombre,
+          cantidad: qty,
+          costo_unitario: costoUnitario,
+          precio_unitario: precioUnitario,
+          total_venta: totalVenta,
+          ganancia_neta: gananciaNeta,
+          metodo_pago: newSaleForm.metodo_pago,
+          fecha: newSale.fecha,
+          notas: buyerNote
+        };
+
+        const { data: insertedData } = await supabase.from('ventas_productos').insert([dbPayload]).select();
+        if (insertedData && insertedData[0]) {
+          setSales(prev => prev.map(s => s.id === tempId ? insertedData[0] : s));
+        }
+
+        if (!prod.id.startsWith('prod-')) {
+          await supabase.from('productos').update({ stock_actual: updatedStock }).eq('id', prod.id);
+        }
+      } catch (err) {
+        console.error('Error al sincronizar venta con Supabase', err);
+      }
+    }
+  };
+
+  // Delete recorded sale and restore inventory stock
+  const handleDeleteSale = async (sale) => {
+    if (!window.confirm(`¿Deseas eliminar la venta de "${sale.producto_nombre}"? El stock será restaurado (+${sale.cantidad} ud).`)) {
+      return;
+    }
+
+    const restoredQty = Number(sale.cantidad) || 1;
+    let newStock = null;
+
+    // Restore product stock locally
+    setProducts(prev => prev.map(p => {
+      if (p.id === sale.producto_id) {
+        newStock = (Number(p.stock_actual) || 0) + restoredQty;
+        return { ...p, stock_actual: newStock };
+      }
+      return p;
+    }));
+
+    // Remove sale locally
+    setSales(prev => prev.filter(s => s.id !== sale.id));
+
+    // Sync deletion to Supabase
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('ventas_productos').delete().eq('id', sale.id);
+        if (newStock !== null && sale.producto_id && !sale.producto_id.startsWith('prod-')) {
+          await supabase.from('productos').update({ stock_actual: newStock }).eq('id', sale.producto_id);
+        }
+      } catch (err) {
+        console.error('Error al eliminar venta en Supabase', err);
+      }
+    }
   };
 
   // Record Completed Service
@@ -353,21 +445,18 @@ export default function AdminPortal({
     e.preventDefault();
     if (!newServiceForm.cliente_nombre || !newServiceForm.monto_cobrado) return;
 
+    const tempId = `serv-${Date.now()}`;
     const newServ = {
-      id: `serv-${Date.now()}`,
+      id: tempId,
       cliente_nombre: newServiceForm.cliente_nombre.trim(),
       servicio_nombre: newServiceForm.servicio_nombre,
       monto_cobrado: Number(newServiceForm.monto_cobrado) || 0,
       metodo_pago: newServiceForm.metodo_pago,
       fecha: new Date().toISOString(),
-      notas: newServiceForm.notas
+      notas: newServiceForm.notas ? newServiceForm.notas.trim() : ''
     };
 
     setCompletedServices(prev => [newServ, ...prev]);
-
-    if (isSupabaseConfigured && supabase) {
-      await supabase.from('servicios_realizados').insert([newServ]);
-    }
 
     setIsRecordServiceOpen(false);
     setNewServiceForm({
@@ -377,6 +466,43 @@ export default function AdminPortal({
       metodo_pago: 'Transferencia',
       notas: ''
     });
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const dbPayload = {
+          cliente_nombre: newServ.cliente_nombre,
+          servicio_nombre: newServ.servicio_nombre,
+          monto_cobrado: newServ.monto_cobrado,
+          metodo_pago: newServ.metodo_pago,
+          fecha: newServ.fecha,
+          notas: newServ.notas
+        };
+
+        const { data: insertedData } = await supabase.from('servicios_realizados').insert([dbPayload]).select();
+        if (insertedData && insertedData[0]) {
+          setCompletedServices(prev => prev.map(s => s.id === tempId ? insertedData[0] : s));
+        }
+      } catch (err) {
+        console.error('Error al registrar servicio en Supabase', err);
+      }
+    }
+  };
+
+  // Delete recorded completed service
+  const handleDeleteService = async (serviceId, serviceName) => {
+    if (!window.confirm(`¿Deseas eliminar el registro de cobro de "${serviceName}"?`)) {
+      return;
+    }
+
+    setCompletedServices(prev => prev.filter(s => s.id !== serviceId));
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('servicios_realizados').delete().eq('id', serviceId);
+      } catch (err) {
+        console.error('Error al eliminar servicio en Supabase', err);
+      }
+    }
   };
 
   // =========================================================================
@@ -384,7 +510,7 @@ export default function AdminPortal({
   // =========================================================================
   if (!isAuthenticated) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/80 backdrop-blur-md animate-fade-in text-left">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/85 text-left font-sans">
         <div className="bg-white rounded-2xl max-w-sm w-full p-8 border border-stone-200 shadow-2xl space-y-6">
           
           <div className="text-center space-y-2.5">
@@ -484,7 +610,7 @@ export default function AdminPortal({
   // VIEW: AUTHENTICATED MANAGEMENT PORTAL
   // =========================================================================
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[#FAF7F0] text-stone-900 overflow-hidden text-left animate-fade-in font-sans">
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#FAF7F0] text-stone-900 overflow-hidden text-left font-sans">
       
       {/* Top Header */}
       <header className="bg-[#0D1410] text-[#FAF7F0] px-4 sm:px-8 py-3.5 border-b border-stone-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
@@ -597,7 +723,7 @@ export default function AdminPortal({
         {/* TAB 1: FINANZAS Y CONTABILIDAD MENSUAL                           */}
         {/* ================================================================ */}
         {activeTab === 'finanzas' && (
-          <div className="space-y-6 animate-fade-in">
+          <div className="space-y-6">
             
             {/* Header & Quick Action Buttons */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200 pb-4">
@@ -732,16 +858,34 @@ export default function AdminPortal({
                 ) : (
                   <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                     {monthlySales.map((sale) => (
-                      <div key={sale.id} className="p-3 rounded-xl bg-stone-50/70 border border-stone-200/70 flex items-center justify-between text-xs hover:bg-stone-50 transition-colors">
-                        <div>
-                          <p className="font-semibold text-stone-900">{sale.producto_nombre}</p>
-                          <span className="text-[11px] text-stone-500">
-                            {new Date(sale.fecha).toLocaleDateString('es-ES')} • {sale.cantidad} ud. • {sale.metodo_pago}
-                          </span>
+                      <div key={sale.id} className="p-3 rounded-xl bg-stone-50/70 border border-stone-200/70 flex items-center justify-between gap-3 text-xs hover:bg-stone-50 transition-colors">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-stone-900 truncate">{sale.producto_nombre}</p>
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-stone-500 mt-1">
+                            {sale.notas && (
+                              <span className="font-semibold text-[#183728] bg-[#F2ECE0] px-2 py-0.5 rounded-md border border-[#D4C4A3]">
+                                Clienta: {sale.notas}
+                              </span>
+                            )}
+                            <span>{new Date(sale.fecha).toLocaleDateString('es-ES')}</span>
+                            <span>•</span>
+                            <span>{sale.cantidad} ud.</span>
+                            <span>•</span>
+                            <span>{sale.metodo_pago}</span>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <span className="font-semibold text-stone-900">RD${sale.total_venta.toLocaleString()}</span>
-                          <p className="text-[10px] text-emerald-700 font-medium">+RD${sale.ganancia_neta.toLocaleString()} neta</p>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <div className="text-right">
+                            <span className="font-semibold text-stone-900 block">RD${sale.total_venta.toLocaleString()}</span>
+                            <p className="text-[10px] text-emerald-700 font-medium">+RD${sale.ganancia_neta.toLocaleString()} neta</p>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteSale(sale)}
+                            title="Eliminar venta y reponer stock"
+                            className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -766,16 +910,32 @@ export default function AdminPortal({
                 ) : (
                   <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                     {monthlyServices.map((serv) => (
-                      <div key={serv.id} className="p-3 rounded-xl bg-stone-50/70 border border-stone-200/70 flex items-center justify-between text-xs hover:bg-stone-50 transition-colors">
-                        <div>
-                          <p className="font-semibold text-stone-900">{serv.servicio_nombre}</p>
-                          <span className="text-[11px] text-stone-500">
-                            {serv.cliente_nombre} • {new Date(serv.fecha).toLocaleDateString('es-ES')} • {serv.metodo_pago}
-                          </span>
+                      <div key={serv.id} className="p-3 rounded-xl bg-stone-50/70 border border-stone-200/70 flex items-center justify-between gap-3 text-xs hover:bg-stone-50 transition-colors">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-stone-900 truncate">{serv.servicio_nombre}</p>
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-stone-500 mt-1">
+                            <span className="font-semibold text-stone-700">
+                              Paciente: {serv.cliente_nombre}
+                            </span>
+                            <span>•</span>
+                            <span>{new Date(serv.fecha).toLocaleDateString('es-ES')}</span>
+                            <span>•</span>
+                            <span>{serv.metodo_pago}</span>
+                          </div>
+                          {serv.notas && <p className="text-[11px] text-stone-400 italic mt-0.5">{serv.notas}</p>}
                         </div>
-                        <div className="text-right">
-                          <span className="font-semibold text-stone-900">RD${serv.monto_cobrado.toLocaleString()}</span>
-                          <span className="block text-[10px] text-stone-400">Cobrado</span>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <div className="text-right">
+                            <span className="font-semibold text-stone-900 block">RD${serv.monto_cobrado.toLocaleString()}</span>
+                            <span className="text-[10px] text-stone-400">Cobrado</span>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteService(serv.id, serv.servicio_nombre)}
+                            title="Eliminar registro de servicio"
+                            className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -792,7 +952,7 @@ export default function AdminPortal({
         {/* TAB 2: INVENTARIO DE PRODUCTOS                                  */}
         {/* ================================================================ */}
         {activeTab === 'inventario' && (
-          <div className="space-y-6 animate-fade-in">
+          <div className="space-y-6">
             
             {/* Header & Controls */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200 pb-4">
@@ -932,7 +1092,7 @@ export default function AdminPortal({
         {/* TAB 3: SERVICIOS REALIZADOS                                     */}
         {/* ================================================================ */}
         {activeTab === 'servicios' && (
-          <div className="space-y-6 animate-fade-in">
+          <div className="space-y-6">
             
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200 pb-4">
               <div>
@@ -970,17 +1130,26 @@ export default function AdminPortal({
               ) : (
                 <div className="divide-y divide-stone-100 space-y-2">
                   {completedServices.map((serv) => (
-                    <div key={serv.id} className="pt-3 pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                      <div>
+                    <div key={serv.id} className="pt-3 pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                      <div className="min-w-0 flex-1">
                         <p className="font-semibold text-stone-900">{serv.servicio_nombre}</p>
                         <p className="text-stone-500 mt-0.5">
                           Paciente: <strong className="text-stone-700">{serv.cliente_nombre}</strong> • {new Date(serv.fecha).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
                         </p>
                         {serv.notas && <p className="text-[11px] text-stone-400 italic mt-0.5">{serv.notas}</p>}
                       </div>
-                      <div className="text-right shrink-0">
-                        <span className="text-sm font-semibold text-stone-900">RD${Number(serv.monto_cobrado).toLocaleString()}</span>
-                        <span className="block text-[10px] text-stone-400 font-medium">{serv.metodo_pago}</span>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="text-right">
+                          <span className="text-sm font-semibold text-stone-900 block">RD${Number(serv.monto_cobrado).toLocaleString()}</span>
+                          <span className="text-[10px] text-stone-400 font-medium">{serv.metodo_pago}</span>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteService(serv.id, serv.servicio_nombre)}
+                          title="Eliminar registro de servicio"
+                          className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -997,7 +1166,7 @@ export default function AdminPortal({
       {/* MODAL 1: AGREGAR NUEVO PRODUCTO                                */}
       {/* ============================================================== */}
       {isAddProductOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/70 backdrop-blur-sm animate-fade-in text-left">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 text-left">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-stone-200 shadow-2xl space-y-4">
             <h3 className="text-base font-serif font-bold text-[#183728]">
               Agregar Producto al Inventario
@@ -1107,7 +1276,7 @@ export default function AdminPortal({
       {/* MODAL 2: REGISTRAR VENTA DE PRODUCTO                           */}
       {/* ============================================================== */}
       {isRecordSaleOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/70 backdrop-blur-sm animate-fade-in text-left">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 text-left">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-stone-200 shadow-2xl space-y-4">
             <h3 className="text-base font-serif font-bold text-[#183728]">
               Registrar Venta de Producto
@@ -1160,12 +1329,14 @@ export default function AdminPortal({
               </div>
 
               <div>
-                <label className="block font-medium text-stone-700 mb-1">Notas / Paciente (Opcional)</label>
+                <label className="block font-medium text-stone-700 mb-1">
+                  Nombre de la Clienta / Compradora (Opcional)
+                </label>
                 <input
                   type="text"
                   value={newSaleForm.notas}
                   onChange={(e) => setNewSaleForm({ ...newSaleForm, notas: e.target.value })}
-                  placeholder="Ej: Vendido a paciente María Gómez"
+                  placeholder="Ej: María Gómez"
                   className="w-full p-2.5 rounded-xl border border-stone-300 bg-white"
                 />
               </div>
@@ -1195,7 +1366,7 @@ export default function AdminPortal({
       {/* MODAL 3: REGISTRAR COBRO DE SERVICIO                           */}
       {/* ============================================================== */}
       {isRecordServiceOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/70 backdrop-blur-sm animate-fade-in text-left">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 text-left">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-stone-200 shadow-2xl space-y-4">
             <h3 className="text-base font-serif font-bold text-[#183728]">
               Registrar Cobro de Servicio
