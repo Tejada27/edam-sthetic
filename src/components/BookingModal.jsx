@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { servicesData } from '../data/servicesData';
 import { bankInfo, clinicInfo } from '../data/bankData';
 import { 
@@ -7,14 +7,21 @@ import {
 } from 'lucide-react';
 
 export default function BookingModal({ isOpen, onClose, preselectedService, onAppointmentCreated, existingAppointments }) {
-  if (!isOpen) return null;
+  // Lock background scroll when open
+  useEffect(() => {
+    if (!isOpen) return;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen]);
 
   // Simple, lightweight 3-step wizard:
   // Step 1: Tratamiento, Fecha y Hora
   // Step 2: Datos de Contacto y Ficha Breve
   // Step 3: Confirmación y Abono por Transferencia / WhatsApp
-  const [currentStep, setCurrentStep] = useState(preselectedService ? 2 : 1);
-  const [selectedService, setSelectedService] = useState(preselectedService || servicesData[0]);
+  const [currentStep, setCurrentStep] = useState(() => preselectedService ? 2 : 1);
+  const [selectedService, setSelectedService] = useState(() => preselectedService || servicesData[0]);
 
   // Official schedule from Katherine Encarnación
   // Martes: 10:00 AM y 3:00 PM
@@ -61,7 +68,7 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
   const rawSlots = selectedDayOfWeek !== null && scheduleByDay[selectedDayOfWeek] ? scheduleByDay[selectedDayOfWeek] : ['10:00 AM', '03:00 PM'];
   const timeSlots = isMassage && selectedDayOfWeek === 5 ? [] : rawSlots;
 
-  const [selectedTime, setSelectedTime] = useState(timeSlots[0] || '10:00 AM');
+  const [selectedTime, setSelectedTime] = useState(() => timeSlots[0] || '10:00 AM');
 
   // Keep selectedTime synchronized if selectedDate or service changes
   useEffect(() => {
@@ -79,6 +86,8 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
 
   const [copiedAccount, setCopiedAccount] = useState(false);
   const [confirmedAppointment, setConfirmedAppointment] = useState(null);
+
+  if (!isOpen) return null;
 
   const isSlotBooked = (date, time) => {
     return existingAppointments?.some(app => app.date === date && app.time === time && app.status !== 'cancelada');
@@ -131,7 +140,7 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
   )}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 text-left">
       <div className="bg-[#FAF7F0] rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl border-2 border-[#C4A45B] overflow-hidden text-left">
         
         {/* Header */}

@@ -105,13 +105,15 @@ function App() {
       />
 
       {/* Booking Wizard Modal */}
-      <BookingModal
-        isOpen={isBookingOpen}
-        onClose={handleCloseBooking}
-        preselectedService={preselectedService}
-        onAppointmentCreated={handleAppointmentCreated}
-        existingAppointments={appointments}
-      />
+      {isBookingOpen && (
+        <BookingModal
+          isOpen={isBookingOpen}
+          onClose={handleCloseBooking}
+          preselectedService={preselectedService}
+          onAppointmentCreated={handleAppointmentCreated}
+          existingAppointments={appointments}
+        />
+      )}
 
       {/* Admin Portal (Inventory, Sales & Accounting for Katherine) */}
       {isAdminPortalOpen && (
