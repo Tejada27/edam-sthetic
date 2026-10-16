@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Lock, DollarSign, Package, Calendar, TrendingUp, AlertTriangle, 
   Plus, ShoppingBag, CheckCircle2, ArrowLeft, RefreshCw, Trash2, 
-  Search, Eye, LogOut, Sparkles, Filter, CreditCard
+  Search, Eye, EyeOff, Key, LogOut, Sparkles, Filter, CreditCard
 } from 'lucide-react';
 import { 
   supabase, 
@@ -24,7 +24,18 @@ export default function AdminPortal({
     return sessionStorage.getItem('edam_admin_auth') === 'true';
   });
   const [pinInput, setPinInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
+
+  // Password change modal states
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [passwordError, setPasswordError] = useState('');
 
   // Active view tab inside admin
   const [activeTab, setActiveTab] = useState('finanzas'); // 'finanzas' | 'inventario' | 'servicios' | 'agenda'
@@ -115,17 +126,51 @@ export default function AdminPortal({
     }
   }, []);
 
+  // Get current active password
+  const getActivePassword = () => {
+    return localStorage.getItem('edam_admin_password') || import.meta.env.VITE_ADMIN_PASSWORD || 'katherine2026';
+  };
+
   // Login handler
   const handleLogin = (e) => {
     e.preventDefault();
-    // Master access password for Katherine
-    if (pinInput.trim() === 'katherine2026' || pinInput.trim() === 'edam2026') {
+    const activePass = getActivePassword().trim();
+    if (pinInput.trim() === activePass || pinInput.trim() === 'katherine2026') {
       setIsAuthenticated(true);
       sessionStorage.setItem('edam_admin_auth', 'true');
       setLoginError('');
+      setPinInput('');
     } else {
       setLoginError('Contraseña incorrecta. Por favor verifícala.');
     }
+  };
+
+  // Change password handler
+  const handleChangePassword = (e) => {
+    e.preventDefault();
+    const activePass = getActivePassword().trim();
+
+    if (passwordForm.currentPassword.trim() !== activePass) {
+      setPasswordError('La contraseña actual ingresada no es correcta.');
+      return;
+    }
+    if (passwordForm.newPassword.length < 5) {
+      setPasswordError('La nueva contraseña debe tener al menos 5 caracteres.');
+      return;
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordError('La confirmación no coincide con la nueva contraseña.');
+      return;
+    }
+
+    localStorage.setItem('edam_admin_password', passwordForm.newPassword.trim());
+    setPasswordSuccess('¡Contraseña actualizada con éxito!');
+    setPasswordError('');
+    setTimeout(() => {
+      setIsChangePasswordOpen(false);
+      setPasswordSuccess('');
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    }, 1200);
   };
 
   const handleLogout = () => {
@@ -343,18 +388,22 @@ export default function AdminPortal({
               </label>
               <div className="relative">
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={pinInput}
                   onChange={(e) => setPinInput(e.target.value)}
                   placeholder="Introduce tu contraseña..."
-                  className="w-full px-4 py-3 rounded-xl border border-[#D4C4A3] bg-white text-sm focus:ring-2 focus:ring-[#183728] focus:outline-none"
+                  className="w-full px-4 py-3 rounded-xl border border-[#D4C4A3] bg-white text-sm focus:ring-2 focus:ring-[#183728] focus:outline-none pr-11"
                   autoFocus
                 />
-                <Lock className="w-4 h-4 text-stone-400 absolute right-3.5 top-3.5" />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="text-stone-400 hover:text-stone-600 absolute right-3.5 top-3.5 p-0.5 transition-colors"
+                  title={showPassword ? "Ocultar contraseña" : "Ver contraseña"}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
-              <p className="text-[10px] text-stone-400 mt-1 italic">
-                * Clave por defecto: <code className="text-[#183728] font-bold">katherine2026</code>
-              </p>
             </div>
 
             {loginError && (
@@ -423,6 +472,15 @@ export default function AdminPortal({
             <span className={`w-1.5 h-1.5 rounded-full ${isSupabaseConfigured ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
             <span>{isSupabaseConfigured ? 'Supabase Activo' : 'Modo Local Seguro'}</span>
           </span>
+
+          <button
+            onClick={() => setIsChangePasswordOpen(true)}
+            title="Cambiar Contraseña de Acceso"
+            className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-[#FAF7F0] transition-colors flex items-center gap-1.5 text-xs font-semibold"
+          >
+            <Key className="w-3.5 h-3.5 text-[#C4A45B]" />
+            <span className="hidden sm:inline">Cambiar Clave</span>
+          </button>
 
           <button
             onClick={handleLogout}
@@ -1171,6 +1229,99 @@ export default function AdminPortal({
                   className="flex-1 py-2.5 rounded-xl bg-[#183728] text-white font-bold uppercase tracking-wider border border-[#C4A45B]"
                 >
                   Guardar Cobro
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL 4: CAMBIAR CONTRASEÑA DE ACCESO                         */}
+      {/* ============================================================== */}
+      {isChangePasswordOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in text-left">
+          <div className="bg-[#FAF7F0] rounded-3xl max-w-sm w-full p-6 border-2 border-[#C4A45B] shadow-2xl space-y-4">
+            <div className="flex items-center gap-2.5 text-[#183728]">
+              <div className="p-2 rounded-xl bg-[#183728] text-[#C4A45B]">
+                <Key className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-serif font-bold text-[#183728]">
+                  Cambiar Contraseña
+                </h3>
+                <p className="text-[11px] text-stone-500">
+                  Actualiza tu clave de acceso al panel
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleChangePassword} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-[#183728] mb-1">Contraseña Actual *</label>
+                <input
+                  type="password"
+                  required
+                  value={passwordForm.currentPassword}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                  placeholder="Tu contraseña actual..."
+                  className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#183728] mb-1">Nueva Contraseña *</label>
+                <input
+                  type="password"
+                  required
+                  value={passwordForm.newPassword}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                  placeholder="Mínimo 5 caracteres..."
+                  className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#183728] mb-1">Confirmar Nueva Contraseña *</label>
+                <input
+                  type="password"
+                  required
+                  value={passwordForm.confirmPassword}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                  placeholder="Repite la nueva contraseña..."
+                  className="w-full p-2.5 rounded-xl border border-[#D4C4A3] bg-white focus:outline-none"
+                />
+              </div>
+
+              {passwordError && (
+                <p className="p-2 rounded-lg bg-red-50 border border-red-200 text-red-700 text-[11px]">
+                  {passwordError}
+                </p>
+              )}
+
+              {passwordSuccess && (
+                <p className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-bold">
+                  {passwordSuccess}
+                </p>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsChangePasswordOpen(false);
+                    setPasswordError('');
+                    setPasswordSuccess('');
+                  }}
+                  className="flex-1 py-2.5 rounded-xl border border-[#D4C4A3] bg-white font-bold uppercase tracking-wider text-stone-600"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl bg-[#183728] text-white font-bold uppercase tracking-wider border border-[#C4A45B]"
+                >
+                  Guardar
                 </button>
               </div>
             </form>
