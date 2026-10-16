@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageCircle, MapPin, Clock, Navigation } from 'lucide-react';
+import { MessageCircle, MapPin, Clock, Navigation, Lock } from 'lucide-react';
 import { clinicInfo, bankInfo } from '../data/bankData';
 
 function InstagramIcon({ className = "w-4 h-4" }) {
@@ -20,7 +20,7 @@ function InstagramIcon({ className = "w-4 h-4" }) {
   );
 }
 
-export default function Footer({ onOpenBooking }) {
+export default function Footer({ onOpenBooking, onOpenAdmin }) {
   return (
     <footer className="bg-[#0A0F0D] text-[#FAF7F0] pt-16 pb-12 border-t-2 border-[#C4A45B] text-left">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -126,12 +126,20 @@ export default function Footer({ onOpenBooking }) {
 
         </div>
 
-        {/* Bottom credits (Removed 'Hecho con para EDAM Sthetic') */}
+        {/* Bottom credits with discrete admin lock button */}
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-[#FAF7F0]/60 gap-4">
           <p>© {new Date().getFullYear()} EDAM Sthetic • Katherine Encarnación. Todos los derechos reservados.</p>
-          <p className="text-xs text-[#E8D9B0]/80">
-            Santo Domingo Este, República Dominicana
-          </p>
+          <div className="flex items-center gap-4 text-xs text-[#E8D9B0]/80">
+            <span>Santo Domingo Este, República Dominicana</span>
+            <button
+              onClick={onOpenAdmin}
+              title="Acceso de Gestión Cabina"
+              className="opacity-25 hover:opacity-100 text-[#FAF7F0] hover:text-[#C4A45B] transition-opacity p-1 flex items-center gap-1 text-[11px]"
+            >
+              <Lock className="w-3 h-3 text-[#C4A45B]" />
+              <span className="sr-only sm:not-sr-only">Gestión</span>
+            </button>
+          </div>
         </div>
 
       </div>

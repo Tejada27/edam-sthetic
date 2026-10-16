@@ -8,12 +8,14 @@ import RecommendationsGuide from './components/RecommendationsGuide';
 import LocationSection from './components/LocationSection';
 import BookingModal from './components/BookingModal';
 import AdminAgenda from './components/AdminAgenda';
+import AdminPortal from './components/AdminPortal';
 import Footer from './components/Footer';
 import { initialAppointments } from './data/bankData';
 
 function App() {
   const [activeTab, setActiveTab] = useState('client'); // 'client' | 'admin'
   const [isBookingOpen, setIsBookingOpen] = useState(false);
+  const [isAdminPortalOpen, setIsAdminPortalOpen] = useState(false);
   const [preselectedService, setPreselectedService] = useState(null);
 
   // Load appointments from localStorage or fall back to initial data
@@ -97,7 +99,10 @@ function App() {
       </main>
 
       {/* Footer */}
-      <Footer onOpenBooking={() => handleOpenBooking(null)} />
+      <Footer 
+        onOpenBooking={() => handleOpenBooking(null)} 
+        onOpenAdmin={() => setIsAdminPortalOpen(true)}
+      />
 
       {/* Booking Wizard Modal */}
       <BookingModal
@@ -107,6 +112,15 @@ function App() {
         onAppointmentCreated={handleAppointmentCreated}
         existingAppointments={appointments}
       />
+
+      {/* Admin Portal (Inventory, Sales & Accounting for Katherine) */}
+      {isAdminPortalOpen && (
+        <AdminPortal
+          onClose={() => setIsAdminPortalOpen(false)}
+          appointments={appointments}
+          onUpdateAppointment={handleUpdateAppointment}
+        />
+      )}
 
     </div>
   );
