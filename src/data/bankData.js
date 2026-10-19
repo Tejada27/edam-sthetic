@@ -17,9 +17,9 @@ export const clinicInfo = {
 };
 
 export const bankInfo = {
-  bankName: 'Banco Popular Dominicano / Banreservas',
+  bankName: 'Banco Popular Dominicano',
   accountType: 'Cuenta de Ahorros',
-  accountNumber: '7920148592',
+  accountNumber: '817863483',
   accountHolder: 'Katherine Encarnación',
   docId: 'Cédula de Identidad',
   currency: 'RD$',
