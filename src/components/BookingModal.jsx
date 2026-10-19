@@ -27,15 +27,16 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
   // Official schedule from Katherine Encarnación
   // Martes: 10:00 AM y 3:00 PM
   // Jueves: 10:00 AM, 3:00 PM y 6:00 PM
-  // Viernes: 3:00 PM y 6:00 PM (Faciales; masajes no disponibles los viernes)
-  // Sábado: 6:00 PM (Solo tarde, no mañana)
+  // Viernes: 10:00 AM, 3:00 PM y 6:00 PM (Día completo)
+  // Sábado: 6:00 PM (Solo tarde a las 6:00 PM; los sábados no se dan masajes ni citas en la mañana)
   // Domingo: 10:00 AM y 3:00 PM
+  // Masajes: disponibles todos los días de cabina; los viernes día completo (los sábados solo a las 6:00 PM)
   const scheduleByDay = {
     0: ['10:00 AM', '03:00 PM'],             // Domingo
     2: ['10:00 AM', '03:00 PM'],             // Martes
     4: ['10:00 AM', '03:00 PM', '06:00 PM'], // Jueves
-    5: ['03:00 PM', '06:00 PM'],             // Viernes
-    6: ['06:00 PM']                          // Sábado
+    5: ['10:00 AM', '03:00 PM', '06:00 PM'], // Viernes (Día completo)
+    6: ['06:00 PM']                          // Sábado (Solo tarde)
   };
 
   const isMassage = selectedService?.category === 'Masajes';
@@ -48,10 +49,6 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
     d.setDate(today.getDate() + i);
     const dayOfWeek = d.getDay();
     if (scheduleByDay[dayOfWeek]) {
-      // Masajes no disponibles los viernes
-      if (isMassage && dayOfWeek === 5) {
-        continue;
-      }
       availableDates.push({
         iso: d.toISOString().split('T')[0],
         dayName: d.toLocaleDateString('es-ES', { weekday: 'short' }),
@@ -66,8 +63,9 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
 
   // Calculate slots dynamically for the selected date
   const selectedDayOfWeek = selectedDate ? new Date(selectedDate + 'T12:00:00').getDay() : null;
-  const rawSlots = selectedDayOfWeek !== null && scheduleByDay[selectedDayOfWeek] ? scheduleByDay[selectedDayOfWeek] : ['10:00 AM', '03:00 PM'];
-  const timeSlots = isMassage && selectedDayOfWeek === 5 ? [] : rawSlots;
+  const timeSlots = selectedDayOfWeek !== null && scheduleByDay[selectedDayOfWeek] 
+    ? scheduleByDay[selectedDayOfWeek] 
+    : ['10:00 AM', '03:00 PM'];
 
   const [selectedTime, setSelectedTime] = useState(() => timeSlots[0] || '10:00 AM');
 
@@ -267,22 +265,21 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
               )}
 
               {/* Official Hours Summary */}
-              <div className="p-3 rounded-2xl bg-[#183728]/5 border border-[#183728]/15 text-xs text-[#183728] space-y-1">
+              <div className="p-3 rounded-2xl bg-[#183728]/5 border border-[#183728]/15 text-xs text-[#183728] space-y-1.5">
                 <p className="font-bold uppercase tracking-wider text-[#9E7F36] text-[10px]">
                   Horarios Oficiales en Cabina:
                 </p>
                 <div className="text-stone-700 grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-0.5 text-[11px]">
                   <p>• <strong>Martes:</strong> 10:00 AM y 3:00 PM</p>
                   <p>• <strong>Jueves:</strong> 10:00 AM, 3:00 PM y 6:00 PM</p>
-                  <p>• <strong>Viernes:</strong> 3:00 PM y 6:00 PM</p>
-                  <p>• <strong>Sábado:</strong> 6:00 PM</p>
+                  <p>• <strong>Viernes:</strong> 10:00 AM, 3:00 PM y 6:00 PM <span className="text-[#9E7F36] font-semibold">(Día completo)</span></p>
+                  <p>• <strong>Sábado:</strong> 6:00 PM <span className="text-stone-500">(Solo tarde; no mañanas)</span></p>
                   <p>• <strong>Domingo:</strong> 10:00 AM y 3:00 PM</p>
                 </div>
-                {isMassage && (
-                  <p className="text-[10px] text-[#9E7F36] font-semibold pt-1 border-t border-[#183728]/10">
-                    💆 Masajes disponibles todos los días menos viernes y sábados en la mañana.
-                  </p>
-                )}
+                <p className="text-[10px] text-[#183728] font-medium pt-1 border-t border-[#183728]/10 flex items-center gap-1.5">
+                  <span className="text-[#9E7F36] font-bold">💆 Masajes:</span>
+                  <span>Disponibles todos los días; viernes en el día completo (sábados solo a las 6:00 PM, no en la mañana).</span>
+                </p>
               </div>
 
               {/* Date Selection */}
