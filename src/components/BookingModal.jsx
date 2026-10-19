@@ -126,6 +126,8 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
     setCurrentStep(3);
   };
 
+  const isFreeDeposit = (selectedService?.deposit || 0) === 0;
+
   // Pre-formatted WhatsApp message for instant 1-click booking confirmation
   const whatsappBookingUrl = `https://wa.me/${bankInfo.whatsappNumber}?text=${encodeURIComponent(
     `¡Hola Katherine! Quiero confirmar mi cita en EDAM Sthetic:\n\n` +
@@ -135,8 +137,9 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
     `• Paciente: ${clientData.name || 'Cliente'}\n` +
     `• Teléfono: ${clientData.phone || ''}\n` +
     (clientData.notesOrAllergies ? `• Nota médica/alergias: ${clientData.notesOrAllergies}\n` : '') +
-    `• Abono a transferir: RD$${selectedService.deposit.toLocaleString()}\n\n` +
-    `Adjunto mi comprobante de transferencia para apartar mi turno.`
+    (isFreeDeposit 
+      ? `• Pago: RD$${selectedService.price.toLocaleString()} (a pagar directo en cabina el día de mi cita).\n\n¡Por favor confírmame mi turno!`
+      : `• Abono a transferir: RD$${selectedService.deposit.toLocaleString()} (restante en cabina).\n\nAdjunto mi comprobante de transferencia al Banco Popular para apartar mi turno.`)
   )}`;
 
   return (
@@ -156,7 +159,7 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
               <h3 className="text-base font-serif font-bold text-[#FAF7F0]">
                 {currentStep === 1 && '1. Elige Tratamiento & Horario'}
                 {currentStep === 2 && '2. Tus Datos para la Cita'}
-                {currentStep === 3 && '3. Confirmar Abono de Reserva'}
+                {currentStep === 3 && (isFreeDeposit ? '3. Confirmación de Cita' : '3. Confirmar Abono de Reserva')}
               </h3>
             </div>
           </div>
@@ -198,7 +201,9 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
                       </div>
                       <div className="text-right shrink-0">
                         <span className="text-xs font-bold text-[#183728]">RD${svc.price.toLocaleString()}</span>
-                        <p className="text-[10px] text-[#9E7F36] font-semibold">Abono: RD${svc.deposit.toLocaleString()}</p>
+                        <p className={`text-[10px] font-semibold ${svc.deposit > 0 ? 'text-[#9E7F36]' : 'text-emerald-700'}`}>
+                          {svc.deposit > 0 ? `Abono: RD$${svc.deposit.toLocaleString()}` : 'Sin abono previo'}
+                        </p>
                       </div>
                     </div>
                   ))}
@@ -301,7 +306,9 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
                 </div>
                 <div className="text-right">
                   <span className="font-bold text-[#183728]">RD${selectedService.price.toLocaleString()}</span>
-                  <p className="text-[10px] text-[#9E7F36] font-semibold">Abono: RD${selectedService.deposit.toLocaleString()}</p>
+                  <p className={`text-[10px] font-semibold ${selectedService.deposit > 0 ? 'text-[#9E7F36]' : 'text-emerald-700'}`}>
+                    {selectedService.deposit > 0 ? `Abono: RD$${selectedService.deposit.toLocaleString()}` : 'Sin abono previo'}
+                  </p>
                 </div>
               </div>
 
@@ -355,65 +362,118 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
           {currentStep === 3 && (
             <div className="space-y-4">
               
-              {/* Deposit Card */}
-              <div className="bg-[#183728] p-4 rounded-2xl border-2 border-[#C4A45B] text-white flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-[#E8D9B0] uppercase tracking-widest block font-bold">
-                    Abono para Asegurar tu Espacio
-                  </span>
-                  <span className="text-2xl font-serif font-bold text-[#FAF7F0]">
-                    RD${selectedService.deposit.toLocaleString()}
-                  </span>
-                  <p className="text-[10px] text-[#E8D9B0] mt-0.5">
-                    Total: RD${selectedService.price.toLocaleString()} (restante se salda el día de tu cita)
-                  </p>
-                </div>
-                <div className="p-2.5 bg-white/10 rounded-xl border border-[#C4A45B]">
-                  <CreditCard className="w-5 h-5 text-[#C4A45B]" />
-                </div>
-              </div>
-
-              {/* Bank Account Info with quick copy */}
-              <div className="bg-white rounded-2xl border border-[#D4C4A3] p-3.5 space-y-2 text-xs">
-                <div className="flex justify-between border-b border-[#F2ECE0] pb-1.5">
-                  <span className="text-stone-500 font-medium">Banco:</span>
-                  <span className="font-bold text-[#183728]">{bankInfo.bankName}</span>
-                </div>
-                <div className="flex justify-between border-b border-[#F2ECE0] pb-1.5">
-                  <span className="text-stone-500 font-medium">Titular:</span>
-                  <span className="font-bold text-[#183728]">{bankInfo.accountHolder}</span>
-                </div>
-                <div className="flex items-center justify-between bg-[#FAF7F0] p-2 rounded-xl border border-[#D4C4A3]">
-                  <span className="text-stone-600 font-medium">Cuenta:</span>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-[#183728]">{bankInfo.accountNumber}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleCopy(bankInfo.accountNumber)}
-                      className="p-1 hover:bg-[#E8D9B0] rounded text-[#183728] transition-colors"
-                      title="Copiar"
-                    >
-                      {copiedAccount ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                    </button>
+              {!isFreeDeposit ? (
+                <>
+                  {/* Deposit Card */}
+                  <div className="bg-[#183728] p-4 rounded-2xl border-2 border-[#C4A45B] text-white flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] text-[#E8D9B0] uppercase tracking-widest block font-bold">
+                        Abono para Asegurar tu Espacio
+                      </span>
+                      <span className="text-2xl font-serif font-bold text-[#FAF7F0]">
+                        RD${selectedService.deposit.toLocaleString()}
+                      </span>
+                      <p className="text-[10px] text-[#E8D9B0] mt-0.5">
+                        Total: RD${selectedService.price.toLocaleString()} (restante se salda el día de tu cita)
+                      </p>
+                    </div>
+                    <div className="p-2.5 bg-white/10 rounded-xl border border-[#C4A45B]">
+                      <CreditCard className="w-5 h-5 text-[#C4A45B]" />
+                    </div>
                   </div>
-                </div>
-              </div>
 
-              {/* Direct WhatsApp Confirmation Button */}
-              <div className="pt-1 space-y-2 text-center">
-                <a
-                  href={whatsappBookingUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full py-3.5 px-4 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all"
-                >
-                  <MessageCircle className="w-4 h-4" />
-                  <span>Enviar Comprobante por WhatsApp</span>
-                </a>
-                <p className="text-[10px] text-stone-500">
-                  Haz tu transferencia y envíale el recibo directo al WhatsApp de tu cosmiatra para confirmar al instante.
-                </p>
-              </div>
+                  {/* Bank Account Info with quick copy */}
+                  <div className="bg-white rounded-2xl border border-[#D4C4A3] p-3.5 space-y-2 text-xs">
+                    <div className="flex justify-between border-b border-[#F2ECE0] pb-1.5">
+                      <span className="text-stone-500 font-medium">Banco:</span>
+                      <span className="font-bold text-[#183728]">{bankInfo.bankName}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-[#F2ECE0] pb-1.5">
+                      <span className="text-stone-500 font-medium">Titular:</span>
+                      <span className="font-bold text-[#183728]">{bankInfo.accountHolder}</span>
+                    </div>
+                    <div className="flex items-center justify-between bg-[#FAF7F0] p-2 rounded-xl border border-[#D4C4A3]">
+                      <span className="text-stone-600 font-medium">Cuenta:</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-[#183728]">{bankInfo.accountNumber}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(bankInfo.accountNumber)}
+                          className="p-1 hover:bg-[#E8D9B0] rounded text-[#183728] transition-colors"
+                          title="Copiar"
+                        >
+                          {copiedAccount ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Direct WhatsApp Confirmation Button */}
+                  <div className="pt-1 space-y-2 text-center">
+                    <a
+                      href={whatsappBookingUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-3.5 px-4 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      <span>Enviar Comprobante por WhatsApp</span>
+                    </a>
+                    <p className="text-[10px] text-stone-500">
+                      Haz tu transferencia al Banco Popular y envíale el recibo a Katherine para asegurar tu turno.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Evaluation No Deposit Card */}
+                  <div className="bg-[#183728] p-4 rounded-2xl border-2 border-[#C4A45B] text-white flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] text-[#E8D9B0] uppercase tracking-widest block font-bold">
+                        Cita Agendada sin Abono Previo
+                      </span>
+                      <span className="text-xl font-serif font-bold text-[#FAF7F0]">
+                        Pago Directo en Cabina
+                      </span>
+                      <p className="text-[10px] text-[#E8D9B0] mt-0.5">
+                        Valor del diagnóstico: RD${selectedService.price.toLocaleString()} (lo pagas al llegar)
+                      </p>
+                    </div>
+                    <div className="p-2.5 bg-white/10 rounded-xl border border-[#C4A45B]">
+                      <CheckCircle2 className="w-5 h-5 text-[#C4A45B]" />
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-[#D4C4A3] p-4 space-y-2 text-xs text-stone-700">
+                    <p className="font-bold text-[#183728] flex items-center gap-2">
+                      <Check className="w-4 h-4 text-emerald-600" />
+                      <span>¡Tu espacio en cabina ha sido reservado!</span>
+                    </p>
+                    <p className="text-[11px] text-stone-600 leading-relaxed">
+                      Para la Evaluación y Diagnóstico no se requiere transferir abono previo. Podrás saldar los RD$500 en efectivo o transferencia el día de tu cita.
+                    </p>
+                    <p className="text-[10px] text-amber-800 bg-amber-50 p-2 rounded-lg border border-amber-200">
+                      Recuerda: si decides realizarte tu tratamiento ese mismo día, los RD$500 se te descuentan del servicio.
+                    </p>
+                  </div>
+
+                  {/* Direct WhatsApp Confirmation Button */}
+                  <div className="pt-1 space-y-2 text-center">
+                    <a
+                      href={whatsappBookingUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-3.5 px-4 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      <span>Confirmar Cita por WhatsApp</span>
+                    </a>
+                    <p className="text-[10px] text-stone-500">
+                      Envía los datos a Katherine por WhatsApp para que quede agendado en su calendario.
+                    </p>
+                  </div>
+                </>
+              )}
 
             </div>
           )}
@@ -451,7 +511,7 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
               onClick={handleFinishBooking}
               className="px-6 py-2.5 rounded-xl bg-[#183728] hover:bg-[#0f241a] disabled:opacity-50 disabled:cursor-not-allowed text-[#FAF7F0] border border-[#C4A45B] text-xs font-bold uppercase tracking-wider shadow-sm transition-all flex items-center gap-1.5"
             >
-              <span>Ver Datos de Abono</span>
+              <span>{isFreeDeposit ? 'Confirmar Cita' : 'Ver Datos de Abono'}</span>
               <ArrowRight className="w-3.5 h-3.5 text-[#C4A45B]" />
             </button>
           )}

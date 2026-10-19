@@ -23,7 +23,7 @@ export const bankInfo = {
   accountHolder: 'Katherine Encarnación',
   docId: 'Cédula de Identidad',
   currency: 'RD$',
-  depositPolicy: 'Para asegurar tu espacio en cabina se solicita un abono de RD$500 a RD$1,000 según el tratamiento. El monto restante se completa el día de tu cita.',
+  depositPolicy: 'Para asegurar tu espacio en cabina se solicita un abono de RD$500. El monto restante se completa el día de tu cita.',
   whatsappNumber: '18292716763',
   whatsappUrl: 'https://wa.me/message/CI524PS2CJXZB1'
 };
