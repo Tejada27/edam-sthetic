@@ -20,8 +20,9 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
   // Step 1: Tratamiento, Fecha y Hora
   // Step 2: Datos de Contacto y Ficha Breve
   // Step 3: Confirmación y Abono por Transferencia / WhatsApp
-  const [currentStep, setCurrentStep] = useState(() => preselectedService ? 2 : 1);
+  const [currentStep, setCurrentStep] = useState(1);
   const [selectedService, setSelectedService] = useState(() => preselectedService || servicesData[0]);
+  const [isChangingService, setIsChangingService] = useState(() => !preselectedService);
 
   // Official schedule from Katherine Encarnación
   // Martes: 10:00 AM y 3:00 PM
@@ -69,6 +70,13 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
   const timeSlots = isMassage && selectedDayOfWeek === 5 ? [] : rawSlots;
 
   const [selectedTime, setSelectedTime] = useState(() => timeSlots[0] || '10:00 AM');
+
+  // Keep selectedDate synchronized if selectedService changes (e.g. massage on Friday)
+  useEffect(() => {
+    if (availableDates.length > 0 && !availableDates.some(d => d.iso === selectedDate)) {
+      setSelectedDate(availableDates[0].iso);
+    }
+  }, [selectedService]);
 
   // Keep selectedTime synchronized if selectedDate or service changes
   useEffect(() => {
@@ -179,36 +187,84 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
           {currentStep === 1 && (
             <div className="space-y-4">
               
-              {/* Select Service Dropdown or Compact Cards */}
-              <div>
-                <label className="block text-xs font-bold text-[#183728] uppercase tracking-wider mb-1.5">
-                  Procedimiento
-                </label>
-                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                  {servicesData.map((svc) => (
-                    <div
-                      key={svc.id}
-                      onClick={() => setSelectedService(svc)}
-                      className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
-                        selectedService?.id === svc.id
-                          ? 'border-[#183728] bg-white ring-2 ring-[#C4A45B] shadow-sm'
-                          : 'border-[#D4C4A3] hover:border-[#183728] bg-white/80'
-                      }`}
-                    >
-                      <div className="pr-2">
-                        <p className="text-xs font-serif font-bold text-[#183728]">{svc.name}</p>
-                        <span className="text-[10px] text-stone-500 font-medium">{svc.category}</span>
+              {/* Service Selection: Compact Card when preselected, or full list */}
+              {!isChangingService ? (
+                <div className="bg-white p-3.5 rounded-2xl border-2 border-[#183728] shadow-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block"></span>
+                        <span className="text-[10px] uppercase font-bold text-stone-500 tracking-wider">
+                          Tratamiento Seleccionado
+                        </span>
                       </div>
-                      <div className="text-right shrink-0">
-                        <span className="text-xs font-bold text-[#183728]">RD${svc.price.toLocaleString()}</span>
-                        <p className={`text-[10px] font-semibold ${svc.deposit > 0 ? 'text-[#9E7F36]' : 'text-emerald-700'}`}>
-                          {svc.deposit > 0 ? `Abono: RD$${svc.deposit.toLocaleString()}` : 'Sin abono previo'}
-                        </p>
+                      <h4 className="font-serif font-bold text-sm text-[#183728] truncate">
+                        {selectedService.name}
+                      </h4>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-xs font-bold text-[#183728]">
+                          RD${selectedService.price.toLocaleString()}
+                        </span>
+                        <span className="text-stone-300">•</span>
+                        <span className={`text-[11px] font-semibold ${selectedService.deposit > 0 ? 'text-[#9E7F36]' : 'text-emerald-700'}`}>
+                          {selectedService.deposit > 0 ? `Abono: RD$${selectedService.deposit.toLocaleString()}` : 'Sin abono previo'}
+                        </span>
                       </div>
                     </div>
-                  ))}
+                    <button
+                      type="button"
+                      onClick={() => setIsChangingService(true)}
+                      className="shrink-0 px-3 py-1.5 rounded-xl border border-[#D4C4A3] hover:border-[#183728] bg-[#FAF7F0] hover:bg-[#F2ECE0] text-[#183728] text-xs font-bold transition-all"
+                    >
+                      Cambiar
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-[#183728] uppercase tracking-wider">
+                      Elige tu Procedimiento
+                    </label>
+                    {preselectedService && (
+                      <button
+                        type="button"
+                        onClick={() => setIsChangingService(false)}
+                        className="text-[11px] font-bold text-[#9E7F36] hover:underline"
+                      >
+                        Mantener actual
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {servicesData.map((svc) => (
+                      <div
+                        key={svc.id}
+                        onClick={() => {
+                          setSelectedService(svc);
+                          setIsChangingService(false);
+                        }}
+                        className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
+                          selectedService?.id === svc.id
+                            ? 'border-[#183728] bg-white ring-2 ring-[#C4A45B] shadow-sm'
+                            : 'border-[#D4C4A3] hover:border-[#183728] bg-white/80'
+                        }`}
+                      >
+                        <div className="pr-2">
+                          <p className="text-xs font-serif font-bold text-[#183728]">{svc.name}</p>
+                          <span className="text-[10px] text-stone-500 font-medium">{svc.category}</span>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="text-xs font-bold text-[#183728]">RD${svc.price.toLocaleString()}</span>
+                          <p className={`text-[10px] font-semibold ${svc.deposit > 0 ? 'text-[#9E7F36]' : 'text-emerald-700'}`}>
+                            {svc.deposit > 0 ? `Abono: RD$${svc.deposit.toLocaleString()}` : 'Sin abono previo'}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Official Hours Summary */}
               <div className="p-3 rounded-2xl bg-[#183728]/5 border border-[#183728]/15 text-xs text-[#183728] space-y-1">
