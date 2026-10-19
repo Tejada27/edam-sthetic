@@ -28,9 +28,8 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
   // Martes: 10:00 AM y 3:00 PM
   // Jueves: 10:00 AM, 3:00 PM y 6:00 PM
   // Viernes: 10:00 AM, 3:00 PM y 6:00 PM (Día completo)
-  // Sábado: 6:00 PM (Solo tarde a las 6:00 PM; los sábados no se dan masajes ni citas en la mañana)
+  // Sábado: 6:00 PM (Solo tarde a las 6:00 PM; no mañanas)
   // Domingo: 10:00 AM y 3:00 PM
-  // Masajes: disponibles todos los días de cabina; los viernes día completo (los sábados solo a las 6:00 PM)
   const scheduleByDay = {
     0: ['10:00 AM', '03:00 PM'],             // Domingo
     2: ['10:00 AM', '03:00 PM'],             // Martes
@@ -39,33 +38,36 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
     6: ['06:00 PM']                          // Sábado (Solo tarde)
   };
 
-  const isMassage = selectedService?.category === 'Masajes';
+  const formatLocalDate = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
   // Generate available working dates matching Katherine's schedule
   const availableDates = [];
   const today = new Date();
   for (let i = 1; availableDates.length < 8 && i <= 28; i++) {
-    const d = new Date(today);
-    d.setDate(today.getDate() + i);
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i, 12, 0, 0);
     const dayOfWeek = d.getDay();
     if (scheduleByDay[dayOfWeek]) {
       availableDates.push({
-        iso: d.toISOString().split('T')[0],
+        iso: formatLocalDate(d),
         dayName: d.toLocaleDateString('es-ES', { weekday: 'short' }),
         dayNumber: d.getDate(),
         month: d.toLocaleDateString('es-ES', { month: 'short' }),
-        dayOfWeek
+        dayOfWeek,
+        slots: scheduleByDay[dayOfWeek]
       });
     }
   }
 
   const [selectedDate, setSelectedDate] = useState(() => availableDates[0]?.iso || '');
 
-  // Calculate slots dynamically for the selected date
-  const selectedDayOfWeek = selectedDate ? new Date(selectedDate + 'T12:00:00').getDay() : null;
-  const timeSlots = selectedDayOfWeek !== null && scheduleByDay[selectedDayOfWeek] 
-    ? scheduleByDay[selectedDayOfWeek] 
-    : ['10:00 AM', '03:00 PM'];
+  // Directly retrieve the slots defined for the chosen date
+  const selectedDateObj = availableDates.find(d => d.iso === selectedDate) || availableDates[0];
+  const timeSlots = selectedDateObj?.slots || ['10:00 AM', '03:00 PM'];
 
   const [selectedTime, setSelectedTime] = useState(() => timeSlots[0] || '10:00 AM');
 
@@ -264,23 +266,6 @@ export default function BookingModal({ isOpen, onClose, preselectedService, onAp
                 </div>
               )}
 
-              {/* Official Hours Summary */}
-              <div className="p-3 rounded-2xl bg-[#183728]/5 border border-[#183728]/15 text-xs text-[#183728] space-y-1.5">
-                <p className="font-bold uppercase tracking-wider text-[#9E7F36] text-[10px]">
-                  Horarios Oficiales en Cabina:
-                </p>
-                <div className="text-stone-700 grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-0.5 text-[11px]">
-                  <p>• <strong>Martes:</strong> 10:00 AM y 3:00 PM</p>
-                  <p>• <strong>Jueves:</strong> 10:00 AM, 3:00 PM y 6:00 PM</p>
-                  <p>• <strong>Viernes:</strong> 10:00 AM, 3:00 PM y 6:00 PM <span className="text-[#9E7F36] font-semibold">(Día completo)</span></p>
-                  <p>• <strong>Sábado:</strong> 6:00 PM <span className="text-stone-500">(Solo tarde; no mañanas)</span></p>
-                  <p>• <strong>Domingo:</strong> 10:00 AM y 3:00 PM</p>
-                </div>
-                <p className="text-[10px] text-[#183728] font-medium pt-1 border-t border-[#183728]/10 flex items-center gap-1.5">
-                  <span className="text-[#9E7F36] font-bold">💆 Masajes:</span>
-                  <span>Disponibles todos los días; viernes en el día completo (sábados solo a las 6:00 PM, no en la mañana).</span>
-                </p>
-              </div>
 
               {/* Date Selection */}
               <div>
